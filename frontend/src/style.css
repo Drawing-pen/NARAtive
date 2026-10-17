@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+
+/* Palet: #24365F #8584BD #EFB54D #F8F4EC #FFFFFF */
+@theme {
+  --color-navy: #24365f;
+  --color-navy-deep: #1a2848;
+  --color-lavender: #8584bd;
+  --color-amber: #efb54d;
+  --color-paper: #f8f4ec;
+  --color-card: #ffffff;
+  --color-ink: #1f2a47;
+  --color-muted: #5b6685;
+  --color-line: #e5ddcd;
+  --color-sand: #efe8da;
+  --color-danger: #a8392b;
+
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-read: 'Literata Variable', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Source Sans 3 Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+    background-image:
+      radial-gradient(48rem 26rem at -8% -6%, rgb(133 132 189 / 0.14), transparent 62%),
+      radial-gradient(44rem 26rem at 108% 104%, rgb(239 181 77 / 0.16), transparent 62%);
+    background-attachment: fixed;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display text-navy;
+    font-variation-settings: 'SOFT' 50;
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-lavender;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-[13px];
+  }
+  .btn-primary {
+    @apply bg-navy text-white shadow-sm hover:bg-navy-deep;
+  }
+  .btn-accent {
+    @apply bg-amber text-navy shadow-sm hover:brightness-95;
+  }
+  .btn-quiet {
+    @apply bg-sand text-navy hover:bg-line;
+  }
+  .btn-outline {
+    @apply border border-line bg-white text-navy hover:border-lavender;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-card;
+    box-shadow: 0 1px 0 rgb(36 54 95 / 0.04), 0 8px 24px -16px rgb(36 54 95 / 0.18);
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-muted;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .input {
+    @apply w-full rounded-lg border border-line bg-paper py-2.5 pr-3 pl-10 text-[15px] text-ink transition placeholder:text-muted/70 focus:border-lavender focus:bg-white focus:outline-none focus:ring-2 focus:ring-lavender/30;
+  }
+  .rule {
+    @apply h-px w-full bg-linear-to-r from-transparent via-line to-transparent;
+  }
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
+  }
+}
+
+/* Mode baca */
+.para {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 7rem;
+}
+.drop-cap::first-letter {
+  float: left;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 3.4em;
+  line-height: 0.82;
+  padding: 0.08em 0.12em 0 0;
+  color: var(--color-navy);
+}

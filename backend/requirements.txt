@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
+cryptography
+pydantic-settings
+python-multipart
+pyjwt
+bcrypt
+pymupdf
+python-dotenv
+email-validator
+alembic
+wordfreq
+# model (install terpisah untuk CPU):
+# pip install torch --index-url https://download.pytorch.org/whl/cpu
+# pip install transformers peft sentencepiece scikit-learn
