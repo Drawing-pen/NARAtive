@@ -7,7 +7,6 @@ import TierChip from '@/components/TierChip.vue'
 defineProps({ id: { type: String, required: true }, doc: { type: Object, default: null } })
 defineEmits(['navigate'])
 
-// Fitur lanjutan yang belum dibangun: tampil di sidebar tetapi belum bisa dibuka.
 const soon = [...UPCOMING,
   { uc: 'UC-17', icon: 'lucide:image-up', title: 'Ganti cover', tier: 'high' },
 ]

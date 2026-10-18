@@ -1,9 +1,3 @@
-"""Alat bantu diagnosa huruf hias (drop cap): python -m app.tools.inspect_dropcaps berkas.pdf
-
-Mencari huruf hias di awal baris (karakter sampah, font/ukuran beda, atau lebih besar), lalu menampilkan: halaman, font, kode karakter yang terbaca,
-lanjutan teksnya, dan tebakan sistem. Ringkasan di akhir mengelompokkan per (font, kode) supaya
-terlihat apakah satu kode selalu berarti satu huruf yang sama.
-"""
 import sys
 import unicodedata
 from collections import Counter, defaultdict
@@ -43,11 +37,10 @@ def main() -> None:
                     bad = any(unicodedata.category(c) in _BAD or c == "\ufffd" for c in ft)
                     other = len(spans) > 1 and (spans[1]["font"] != first["font"] or abs(spans[1]["size"] - first["size"]) > 0.5)
                     big = first["size"] >= body * 1.3
-                    # huruf hias: karakter sampah, ATAU font/ukurannya beda dari kata berikutnya, ATAU lebih besar dari teks isi
                     if not (bad or other or big):
                         continue
                     rest = "".join(sp["text"] for sp in spans[1:])
-                    if not rest.strip() and i + 1 < len(lines):   # sisa kata ada di baris berikutnya
+                    if not rest.strip() and i + 1 < len(lines):   
                         rest = "".join(sp["text"] for sp in lines[i + 1]["spans"])
                     rest = rest[:25]
                     shown = first["text"]

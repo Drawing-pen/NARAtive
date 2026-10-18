@@ -28,7 +28,6 @@ async function load(silent = false) {
   }
 }
 
-// UC-06: hapus e-book (dengan konfirmasi)
 const toDelete = ref(null)
 const cancelBtn = ref(null)
 watch(toDelete, (v) => { if (v) setTimeout(() => cancelBtn.value?.focus(), 0) })
@@ -53,7 +52,7 @@ async function confirmDelete() {
     docs.value = docs.value.filter((d) => d.id !== toDelete.value.id)
     toDelete.value = null
   } catch (e) {
-    if (e.response?.status === 404) {   // sudah terhapus (mis. dari tab lain)
+    if (e.response?.status === 404) {  
       docs.value = docs.value.filter((d) => d.id !== toDelete.value.id)
       toDelete.value = null
     } else {
@@ -109,7 +108,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <p class="eyebrow">Analisis konten e-book</p>
           <h1 class="text-3xl font-semibold sm:text-4xl">Unggah naskah, lihat ratingnya</h1>
           <p class="max-w-md text-[15px] text-muted">
-            Unggah naskah PDF atau EPUB untuk dinilai kontennya, lalu baca dengan Safe Mode yang menyamarkan adegan seksual.
+            Unggah naskah PDF atau EPUB untuk dinilai kontennya, lalu baca dengan Safe Mode yang menyamarkan adegan dewasa.
           </p>
         </div>
         <div class="space-y-3 rounded-xl bg-paper p-5">

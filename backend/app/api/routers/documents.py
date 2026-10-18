@@ -160,9 +160,11 @@ def create_summary(doc_id: int, user: User = Depends(get_current_user), db: Sess
     if not summarizer.configured():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Layanan rangkuman belum diatur di server (GEMINI_API_KEY kosong).")
     if doc.summary_status != "running":
+        resume = doc.summary_status == "failed"
         doc.summary_status, doc.summary = "running", None
-        for c in doc.chapters:
-            c.summary = None
+        if not resume:
+            for c in doc.chapters:
+                c.summary = None
         db.commit()
         summarizer.start(doc.id)
     return _summary_out(doc)

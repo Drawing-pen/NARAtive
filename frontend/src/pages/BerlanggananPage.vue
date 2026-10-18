@@ -2,7 +2,6 @@
 import SoonButton from '@/components/SoonButton.vue'
 import TierChip from '@/components/TierChip.vue'
 
-// Isi paket mengikuti SRS. Harga belum ditetapkan.
 const plans = [
   {
     key: 'standard', name: 'Standard', tag: 'Gratis', current: true, icon: 'lucide:user',
@@ -30,11 +29,6 @@ const plans = [
       <p class="text-lg text-muted">Mulai gratis, naikkan tingkatan saat butuh rincian yang lebih dalam atau kuota yang lebih besar.</p>
     </header>
 
-    <p class="flex items-start gap-2 rounded-xl bg-sand px-4 py-3 text-sm text-navy">
-      <Icon icon="lucide:info" class="mt-0.5 size-4 shrink-0" />
-      Halaman ini masih tampilan awal: harga belum ditetapkan, pembayaran belum aktif, dan batas paket belum diberlakukan pada versi prototipe ini.
-    </p>
-
     <section class="grid gap-6 lg:grid-cols-3" aria-label="Pilihan paket">
       <article
         v-for="p in plans"
@@ -54,7 +48,7 @@ const plans = [
         </div>
 
         <div>
-          <p class="font-display text-3xl font-semibold text-navy">{{ p.key === 'standard' ? 'Gratis' : 'Segera diumumkan' }}</p>
+          <p class="font-display text-3xl font-semibold text-navy">{{ p.key === 'standard' ? 'Gratis' : 'TBA' }}</p>
         </div>
 
         <div class="space-y-2.5">

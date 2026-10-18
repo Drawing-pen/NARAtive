@@ -1,9 +1,3 @@
-"""tambah kolom rangkuman (UC-09): documents.summary, documents.summary_status, chapters.summary
-
-Revision ID: 0006
-Revises: 0005
-Create Date: 2026-10-17
-"""
 from typing import Sequence, Union
 
 from alembic import op

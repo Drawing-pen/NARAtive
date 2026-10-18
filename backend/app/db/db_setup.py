@@ -1,8 +1,3 @@
-"""Siapkan database: buat database bila belum ada, lalu jalankan migrasi.
-
-    python -m app.db.db_setup            # buat database (jika belum ada) + migrate ke versi terbaru
-    python -m app.db.db_setup --fresh    # hapus SEMUA tabel lebih dulu, lalu migrate ulang (data hilang)
-"""
 import re
 import sys
 from pathlib import Path
@@ -20,7 +15,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 def create_database_if_missing() -> None:
     url = make_url(settings.database_url)
     if not url.drivername.startswith("mysql"):
-        return  # SQLite membuat filenya sendiri
+        return  
     name = url.database
     if not name or not re.fullmatch(r"[A-Za-z0-9_]+", name):
         raise SystemExit(f"Nama database '{name}' tidak valid (hanya huruf, angka, underscore).")

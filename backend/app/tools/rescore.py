@@ -1,11 +1,3 @@
-"""Hitung ulang dimensi seksual untuk e-book yang sudah dianalisis, tanpa upload ulang dan tanpa menjalankan model.
-
-    python -m app.tools.rescore            # semua dokumen berstatus done
-    python -m app.tools.rescore 12 15      # hanya dokumen tertentu
-
-Skor seksual paragraf diganti menjadi maksimum(skor model yang tersimpan, skor kamus), lalu rating dan
-persentase dokumen dihitung ulang. Aman dijalankan berulang kali (hasilnya sama).
-"""
 import sys
 
 from app.db.database import SessionLocal

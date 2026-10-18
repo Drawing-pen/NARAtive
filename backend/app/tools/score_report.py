@@ -1,8 +1,3 @@
-"""Diagnosa skor model pada satu e-book: python -m app.tools.score_report <id_dokumen> [dimensi]
-
-Menampilkan sebaran skor, jumlah paragraf yang lolos ambang, paragraf dengan skor tertinggi, dan
-paragraf yang memuat kata kunci eksplisit tetapi skornya rendah (indikasi model melewatkan konten).
-"""
 import re
 import sys
 

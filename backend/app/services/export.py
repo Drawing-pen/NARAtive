@@ -1,4 +1,3 @@
-"""UC-13: susun PDF hasil analisis (ringkasan rating + teks bersih per bab dengan paragraf sensitif disorot)."""
 import io
 from html import escape
 

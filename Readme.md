@@ -138,8 +138,6 @@ NARAtive_IPPL2026/
 
 ## Menjalankan secara lokal
 
-Prasyarat: Python 3.13, Node 22, MySQL 8.
-
 ### 1. Model
 
 Letakkan hasil pelatihan di folder `model/` pada akar repositori:

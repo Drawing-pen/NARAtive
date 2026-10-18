@@ -6,7 +6,6 @@ const api = axios.create({
 
 const FIELD_LABEL = { title: 'Judul' }
 
-/** Ubah error axios/FastAPI menjadi pesan yang ramah dibaca. */
 export function errorMessage(error, fallback = 'Terjadi kesalahan. Coba lagi.') {
   if (!error?.response) return 'Tidak dapat terhubung ke server. Pastikan backend sedang berjalan.'
   const detail = error.response.data?.detail

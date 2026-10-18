@@ -2,7 +2,6 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { errorMessage } from '@/lib/api'
 
-// UC-09: rangkuman per bab dan keseluruhan buku
 const props = defineProps({ id: { type: String, required: true } })
 
 const doc = ref(null)

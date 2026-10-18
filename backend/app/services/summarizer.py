@@ -1,9 +1,3 @@
-"""UC-09: rangkuman per bab dan keseluruhan buku lewat Gemini API (layanan eksternal sesuai SDD).
-
-Dijalankan di thread latar (bukan antrean analisis) supaya tidak menghambat model.
-Alur: tiap bab diringkas satu per satu -> rangkuman-rangkuman bab digabung menjadi rangkuman buku.
-Teks buku hanya dikirim saat pengguna menekan tombol "Buat rangkuman".
-"""
 import json
 import logging
 import threading
@@ -19,8 +13,8 @@ from app.ml.analyzer import THRESHOLDS
 log = logging.getLogger("narative.summary")
 
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-MAX_CHARS = 120_000          # batas teks satu bab yang dikirim
-RETRY_WAIT = (5, 15, 40)     # detik; untuk 429 / 5xx
+MAX_CHARS = 120_000          
+RETRY_WAIT = (5, 15, 40)     
 UNAVAILABLE = "Rangkuman bab ini tidak dapat dibuat."
 SYSTEM = (
     "Kamu merangkum cerita fiksi/non-fiksi untuk pembaca e-book. Tulis dalam bahasa Indonesia yang jelas dan netral. "
@@ -131,7 +125,7 @@ def run(doc_id: int) -> None:
                 log.warning("Bab %s dokumen %s: %s", ch.number, doc_id, e)
                 ch.summary = UNAVAILABLE
                 if "(400)" in str(e) or "(401)" in str(e) or "(403)" in str(e) or "(404)" in str(e):
-                    raise   # kunci/model salah: hentikan, jangan menghabiskan kuota percuma
+                    raise   
             db.commit()
         if not done_parts:
             raise SummaryError("Tidak ada bab yang berhasil dirangkum.")
@@ -154,7 +148,6 @@ def start(doc_id: int) -> None:
 
 
 def reset_stale() -> None:
-    """Server menyala ulang: rangkuman yang sedang dibuat saat server mati ditandai gagal agar bisa diulang."""
     with SessionLocal() as db:
         for doc in db.query(Document).filter(Document.summary_status == "running"):
             doc.summary_status = "failed"

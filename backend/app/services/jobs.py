@@ -1,10 +1,3 @@
-"""Antrean analisis: satu worker memproses dokumen satu per satu.
-
-Tanpa antrean, banyak unggahan bersamaan akan menjalankan model secara paralel
-(RAM membengkak dan semuanya melambat). Dokumen berstatus "queued" menunggu giliran,
-"analyzing" sedang diproses. Setelah server menyala ulang, dokumen yang belum selesai
-dimasukkan lagi ke antrean (teksnya sudah tersimpan di database, PDF tidak diperlukan).
-"""
 import logging
 import queue
 import threading
@@ -76,7 +69,6 @@ def _loop() -> None:
 
 
 def start_worker() -> None:
-    """Jalankan worker (sekali) dan masukkan kembali dokumen yang belum selesai."""
     global _worker
     if _worker is not None:
         return

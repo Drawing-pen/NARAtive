@@ -1,8 +1,3 @@
-"""Pembaca EPUB (UC-01). Keluarannya sama dengan read_pdf: (jumlah halaman, judul bab, [(nomor bab, paragraf)]).
-
-EPUB = berkas ZIP berisi XHTML. Paragraf sudah ditandai <p> dan bab sudah terpisah per berkas, jadi tidak ada
-tebakan batas paragraf, header/footer, nomor halaman, atau OCR seperti pada PDF. Hanya pustaka standar Python.
-"""
 import logging
 import posixpath
 import re
@@ -16,11 +11,10 @@ from app.extraction.pdf_utils import MAX_PARAGRAPH_CHARS, _chunk_long
 
 log = logging.getLogger("narative.epub")
 
-CHARS_PER_PAGE = 1800        # EPUB tidak punya halaman: diperkirakan dari jumlah karakter
+CHARS_PER_PAGE = 1800        
 MIN_PARAGRAPH_CHARS = 20
-MIN_UNTITLED_CHARS = 300     # berkas tanpa judul dan sependek ini = halaman judul/hak cipta, ikut bab sebelumnya
+MIN_UNTITLED_CHARS = 300     
 MAX_UNCOMPRESSED = 300 * 1024 * 1024
-# Algoritma yang hanya mengaburkan font (bukan DRM isi buku).
 _FONT_ONLY = ("http://www.idpf.org/2008/embedding", "http://ns.adobe.com/pdf/enc#RC")
 _BLOCK = {"p", "div", "li", "blockquote", "pre", "dt", "dd", "tr", "section", "article", "aside",
           "figcaption", "caption", "ul", "ol", "table", "body", "hr", "h1", "h2", "h3", "h4", "h5", "h6"}
@@ -50,7 +44,7 @@ class _Blocks(HTMLParser):
         self.blocks: list[tuple] = []
         self.buf: list[str] = []
         self.skip = 0
-        self.heading = 0          # level judul yang sedang dibaca (0 = tidak sedang)
+        self.heading = 0         
         self.in_a = 0
         self.a_chars = 0
         self.all_chars = 0
@@ -120,7 +114,7 @@ def _decode(raw: bytes) -> str:
 
 
 def _xml(raw: bytes) -> ET.Element:
-    text = re.sub(r"^\s*<\?xml[^>]*\?>", "", _decode(raw))   # deklarasi encoding tak perlu lagi setelah didekode
+    text = re.sub(r"^\s*<\?xml[^>]*\?>", "", _decode(raw))   
     return ET.fromstring(text)
 
 
@@ -200,12 +194,6 @@ def _toc(z: zipfile.ZipFile, manifest: dict, ncx_id: str | None) -> dict[str, st
 
 
 def _pack(paragraphs: list[str]) -> list[str]:
-    """Kumpulkan paragraf asli menjadi blok sampai ~900 karakter (dipisah baris baru), berhenti di pemisah adegan.
-
-    Alasan: ambang rating dan persentase dikalibrasi pada blok sebesar itu (seperti hasil PDF). Paragraf EPUB asli sering
-    hanya satu-dua kalimat; dinilai satu per satu, dialog pendek mudah salah ditandai dan persentasenya melonjak.
-    Baris dialog tetap terpisah di mode baca karena pemisahnya baris baru.
-    """
     out, cur = [], ""
 
     def flush():
@@ -215,7 +203,7 @@ def _pack(paragraphs: list[str]) -> list[str]:
         cur = ""
 
     for text in paragraphs:
-        if not re.search(r"[^\W\d_]", text):   # tanpa huruf = pemisah adegan (* * *, ---)
+        if not re.search(r"[^\W\d_]", text):   
             flush()
             continue
         for piece in _chunk_long(text):
@@ -239,7 +227,7 @@ def read_epub(path: str) -> tuple[int, list[str], list[tuple[int, str]]]:
         _, manifest, spine, ncx_id = _package(z)
         toc = _toc(z, manifest, ncx_id)
 
-        chapters: list[dict] = []   # {"title": str|None, "paras": [str]}
+        chapters: list[dict] = []   
         for idref in spine:
             if idref not in manifest:
                 continue
@@ -253,7 +241,7 @@ def read_epub(path: str) -> tuple[int, list[str], list[tuple[int, str]]]:
             except KeyError:
                 continue
             if parser.all_chars and parser.a_chars / parser.all_chars > 0.6:
-                continue   # halaman daftar isi (isinya tautan semua)
+                continue   
             blocks = parser.blocks
             if not any(b[0] == "p" for b in blocks):
                 continue
@@ -271,10 +259,9 @@ def read_epub(path: str) -> tuple[int, list[str], list[tuple[int, str]]]:
                     if cur["title"] is None:
                         cur["title"] = text
                 elif level <= 2 and len(text) <= 120:
-                    cur = {"title": text, "paras": [], "from_toc": False}   # judul bab di tengah berkas
+                    cur = {"title": text, "paras": [], "from_toc": False}   
                     chapters.append(cur)
 
-        # Berkas tanpa judul dan pendek (halaman judul, hak cipta) ikut bab sebelumnya.
         merged: list[dict] = []
         for ch in chapters:
             if ch["title"] is None and merged and sum(len(p) for p in ch["paras"]) < MIN_UNTITLED_CHARS:

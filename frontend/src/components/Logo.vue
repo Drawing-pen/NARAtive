@@ -2,7 +2,6 @@
 import logo from '@/assets/logo.png'
 import logoLight from '@/assets/logo-light.png'
 
-// light = versi putih untuk latar gelap (footer)
 defineProps({ light: Boolean })
 </script>
 

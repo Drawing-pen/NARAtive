@@ -8,7 +8,7 @@ from app.ml.lexicon import sexual_lexicon_score
 
 log = logging.getLogger("uvicorn.error")
 
-WINDOW_MAX_LENGTH = 256   # model dilatih di 128 token; jendela N-1/N/N+1 butuh lebih panjang
+WINDOW_MAX_LENGTH = 256  
 BATCH_SIZE = 16
 EMOTION_LABELS = ["sad", "angry", "fear", "happy"]
 
@@ -29,7 +29,6 @@ class ModelAnalyzer:
         self.model = load_model(str(checkpoint), self.device)
 
     def _windows(self, paragraphs: list[str]) -> list[str]:
-        """Sliding window N-1 / N / N+1 per paragraf."""
         out = []
         for i in range(len(paragraphs)):
             lo, hi = max(0, i - 1), min(len(paragraphs), i + 2)
@@ -37,9 +36,6 @@ class ModelAnalyzer:
         return out
 
     def analyze(self, paragraphs: list[str]) -> list[dict]:
-        """Skor tiap paragraf. Hasil identik dengan memanggil model per dimensi, tapi lebih cepat:
-        backbone dijalankan satu kali per batch (bukan 4 kali), lalu 4 kepala klasifikasi dipakai
-        pada keluaran yang sama; teks diurutkan menurut panjang agar padding sedikit."""
         torch = self.torch
         texts = self._windows(paragraphs)
         n = len(texts)
@@ -66,7 +62,6 @@ class ModelAnalyzer:
                 done = min(start + BATCH_SIZE, n)
                 if (start // BATCH_SIZE) % 10 == 0 or done == n:
                     log.info("Analisis: %d/%d paragraf (%.0f detik)", done, n, time.time() - t0)
-        # Sinyal kedua dimensi seksual: kamus kata eksplisit pada paragraf itu sendiri (bukan jendela 3 paragraf).
         for r, text in zip(results, paragraphs):
             r["sexual"] = max(r["sexual"], sexual_lexicon_score(text))
         return results
@@ -100,22 +95,13 @@ def get_analyzer() -> ModelAnalyzer:
     return _analyzer
 
 
-# Ambang skor per dimensi (paragraf dianggap "terdeteksi" bila skor >= ambang).
-# Violence dinaikkan karena model terlalu sensitif di prosa naratif (dikalibrasi
-# dari 4 buku Gutenberg: heuristik, bukan hasil validasi statistik).
 THRESHOLDS = {"profanity": 0.5, "sexual": 0.5, "violence": 0.8}
 
 
-ADULT_DIMENSIONS = ("sexual", "violence")   # dimensi yang menentukan rating dan persentase konten dewasa
+ADULT_DIMENSIONS = ("sexual", "violence")   
 
 
 def rate(pct: dict, counts: dict | None = None) -> str:
-    """Aturan rating: persentase paragraf per dimensi DAN jumlah paragraf minimum.
-
-    Jumlah minimum mencegah satu paragraf salah deteksi mengubah rating (pada naskah 20 paragraf,
-    satu paragraf sudah 5%). Seksual cukup 2 paragraf karena satu adegan eksplisit pun bermakna.
-    """
-    # Bahasa kasar tidak dihitung: deteksinya masih sering keliru (terutama bahasa Indonesia) dan bukan penentu kedewasaan.
     sex, vio = pct["sexual"], pct["violence"]
     c = counts or {"sexual": 99, "violence": 99}
     if sex >= 3 and c["sexual"] >= 3:
@@ -127,7 +113,6 @@ def rate(pct: dict, counts: dict | None = None) -> str:
     return "General"
 
 
-# Rentang usia pembaca yang disarankan per kategori rating (SRS FR-06).
 AGE_RANGES = {"General": "Semua umur", "Teen": "13+", "Mature": "17+", "Explicit": "21+"}
 NEGATIVE_EMOTIONS = ("sad", "angry", "fear")
 EMOTION_MIN_CONF = 0.85
@@ -150,12 +135,6 @@ def blend_heaviness(model_part: float | None, legacy: float, ai: float | None) -
 
 
 def summarize(results: list[dict], ai: float | None = None) -> dict:
-    """Agregasi skor paragraf: persentase per dimensi, persentase konten dewasa, bobot cerita, rating, emosi dominan.
-
-    - pct_adult  : % paragraf yang terdeteksi minimal satu dimensi dewasa, yaitu seksual atau kekerasan (gabungan, tanpa hitung ganda).
-    - heaviness  : bobot cerita 0-100 = gabungan penilaian Gemini atas berat konflik dan tema (bobot 0,7) dengan % paragraf
-                   bernada negatif yang diprediksi model dengan keyakinan tinggi (bobot 0,3).
-    """
     n = max(len(results), 1)
     pct = {d: round(100 * sum(1 for r in results if r[d] >= t) / n, 1)
            for d, t in THRESHOLDS.items()}

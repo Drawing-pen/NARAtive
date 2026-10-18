@@ -1,4 +1,3 @@
-// Label dan aturan tampilan untuk hasil analisis.
 export const RATINGS = {
   General: {
     label: 'General',
@@ -32,8 +31,6 @@ export const DIMENSIONS = {
   violence: { label: 'Kekerasan', icon: 'lucide:swords' },
 }
 
-// Ambang standar Safe Mode (sama dengan THRESHOLDS di backend app/ml/analyzer.py).
-// Pengguna Free dan Middle memakai ambang ini; High User boleh mengatur sendiri per dimensi (UC-12).
 export const STANDARD_THRESHOLDS = { profanity: 0.5, sexual: 0.5, violence: 0.8 }
 
 export const EMOTIONS = {
@@ -61,14 +58,12 @@ export function formatDate(iso) {
 
 export const num = (n) => (n === null || n === undefined ? '-' : String(n).replace('.', ','))
 
-// Tingkatan akun (SRS): Standard (Free), Middle, High.
 export const TIERS = {
   standard: { label: 'Standard', cls: 'bg-sand text-navy', icon: 'lucide:user' },
   middle: { label: 'Middle', cls: 'bg-lavender/25 text-navy', icon: 'lucide:lock' },
   high: { label: 'High', cls: 'bg-amber/40 text-navy', icon: 'lucide:lock' },
 }
 
-// Fitur lanjutan yang belum dibangun (tampilan saja). Nama dan deskripsi mengikuti use case SRS.
 export const UPCOMING = [
   { uc: 'UC-10', icon: 'lucide:contact-round', title: 'Biodata tokoh', tier: 'middle', action: 'Lihat tokoh',
     desc: 'Daftar tokoh beserta peran (utama/pendukung) dan seberapa sering muncul.' },

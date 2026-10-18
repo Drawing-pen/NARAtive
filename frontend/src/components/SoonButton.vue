@@ -1,15 +1,14 @@
 <script setup>
-// Tombol untuk fitur yang belum dibangun: tampil lengkap tetapi tidak bisa ditekan.
 import { computed } from 'vue'
 import { TIERS } from '@/lib/content'
 
 const props = defineProps({
   icon: { type: String, default: '' },
-  variant: { type: String, default: 'quiet' },   // primary | accent | quiet | outline
-  tier: { type: String, default: '' },           // middle | high
+  variant: { type: String, default: 'quiet' },   
+  tier: { type: String, default: '' },           
   small: { type: Boolean, default: false },
   iconOnly: { type: Boolean, default: false },
-  label: { type: String, default: '' },          // wajib untuk tombol ikon saja (aria-label)
+  label: { type: String, default: '' },          
 })
 
 const hint = computed(() => `Segera hadir${props.tier ? ` · khusus ${TIERS[props.tier].label} User` : ''}`)

@@ -64,7 +64,7 @@ class ChapterSummaryOut(BaseModel):
 
 
 class SummaryOut(BaseModel):
-    status: str | None            # null = belum pernah dibuat | running | done | failed
+    status: str | None           
     done_chapters: int
     total_chapters: int
     overall: str | None

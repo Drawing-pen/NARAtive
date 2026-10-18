@@ -1,8 +1,3 @@
-"""Sementara: belum ada login. Semua permintaan diperlakukan sebagai satu Standard User (Free).
-
-Tahap login/registrasi nanti mengganti isi get_current_user dengan verifikasi token.
-Semua router sudah memakai get_current_user, jadi router tidak perlu diubah.
-"""
 from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -22,14 +17,12 @@ def _get_or_create_default(db: Session) -> User:
         try:
             db.commit()
         except IntegrityError:
-            # Dua permintaan pertama datang bersamaan: yang lain sudah membuatnya.
             db.rollback()
             user = db.scalar(select(User).where(User.email == DEFAULT_EMAIL))
     return user
 
 
 def ensure_default_user() -> None:
-    """Dipanggil saat server menyala supaya permintaan pertama tidak saling berebut membuat user."""
     with SessionLocal() as db:
         _get_or_create_default(db)
 

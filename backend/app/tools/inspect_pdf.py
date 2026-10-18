@@ -1,7 +1,3 @@
-"""Alat bantu diagnosa: python -m app.tools.inspect_pdf berkas.pdf [halaman]
-
-Menampilkan teks mentah satu halaman (repr, agar karakter aneh terlihat) dan hasil deteksi bab.
-"""
 import sys
 
 import pymupdf

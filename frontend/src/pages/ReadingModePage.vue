@@ -39,8 +39,6 @@ function persist() {
   }
 }
 
-// UC-05: Safe Mode standar hanya menyamarkan adegan seksual. Bahasa kasar dan kekerasan baru bisa
-// dipilih lewat personalisasi Safe Mode (UC-12, High User), yang belum dibangun.
 const SAFE_MODE_DIMENSIONS = ['sexual']
 function flagsOf(p) {
   return SAFE_MODE_DIMENSIONS.filter((key) => p[key] !== null && p[key] >= STANDARD_THRESHOLDS[key])

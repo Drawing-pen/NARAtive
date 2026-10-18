@@ -4,16 +4,16 @@ import { RATINGS } from '@/lib/content'
 const ages = { General: 'Semua umur', Teen: '13+', Mature: '17+', Explicit: '21+' }
 
 const steps = [
-  { icon: 'lucide:file-up', title: 'Unggah naskah', text: 'Pilih e-book berformat PDF atau EPUB dari perangkatmu. Analisis dimulai otomatis.' },
-  { icon: 'lucide:scan-search', title: 'Naskah dianalisis', text: 'Model bahasa membaca tiap paragraf: bahasa kasar, konten seksual, kekerasan, dan bobot emosinya.' },
-  { icon: 'lucide:book-open', title: 'Baca dengan tenang', text: 'Lihat rating dan rentang usia, lalu baca per bab dengan Safe Mode yang menyamarkan adegan seksual.' },
+  { icon: 'lucide:file-up', title: 'Unggah naskah', text: 'Pilih e-book berformat PDF atau EPUB dari perangkatmu.' },
+  { icon: 'lucide:scan-search', title: 'Naskah dianalisis', text: 'Model membaca tiap paragraf dan menganalisis bahasa kasar, konten seksual, kekerasan, dan bobot ceritanya.' },
+  { icon: 'lucide:book-open', title: 'Baca dengan tenang', text: 'Lihat rating dan rentang usia, lalu baca per bab dengan Safe Mode yang menyamarkan adegan sensitif.' },
 ]
 
 const features = [
   { icon: 'lucide:badge-check', title: 'Rating dan rentang usia', text: 'General, Teen, Mature, atau Explicit, lengkap dengan usia pembaca yang disarankan.' },
-  { icon: 'lucide:shield-alert', title: 'Persentase konten dewasa', text: 'Berapa banyak paragraf yang memuat konten seksual atau kekerasan.' },
-  { icon: 'lucide:weight', title: 'Bobot cerita', text: 'Seberapa berat nuansa emosinya, dari porsi paragraf yang sedih, marah, atau takut.' },
-  { icon: 'lucide:eye-off', title: 'Safe Mode', text: 'Adegan seksual diburamkan, dan kamu yang memutuskan mau membukanya atau tidak.' },
+  { icon: 'lucide:shield-alert', title: 'Persentase konten dewasa', text: 'Berapa banyak paragraf yang memuat konten dewasa atau sensitif.' },
+  { icon: 'lucide:weight', title: 'Bobot cerita', text: 'Seberapa berat konflik atau teman yang diangkat di dalam cerita.' },
+  { icon: 'lucide:eye-off', title: 'Safe Mode', text: 'Adegan dewasa diburamkan, dan kamu yang memutuskan mau membukanya atau tidak.' },
   { icon: 'lucide:library-big', title: 'Mode baca per bab', text: 'Baca langsung di sini tanpa aplikasi pembaca e-book, lengkap dengan navigasi bab.' },
 ]
 </script>
@@ -24,9 +24,9 @@ const features = [
     <section class="container-page grid gap-10 pt-12 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:pt-16">
       <div class="space-y-6">
         <p class="eyebrow">Analisis konten e-book</p>
-        <h1 class="text-4xl leading-[1.1] font-semibold sm:text-5xl">Kenali isi naskah sebelum kamu membacanya.</h1>
+        <h1 class="text-4xl leading-[1.1] font-semibold sm:text-5xl">Kenali isi buku sebelum kamu membacanya.</h1>
         <p class="max-w-lg text-lg text-muted">
-          NARAtive membaca e-book PDF atau EPUB-mu, menilai muatan kontennya, lalu menemanimu membaca dengan Safe Mode yang menyamarkan adegan seksual.
+          NARAtive membaca e-book PDF atau EPUB-mu, menilai muatan kontennya, lalu menemanimu membaca dengan Safe Mode yang menyamarkan adegan sensitif.
         </p>
         <div class="flex flex-wrap gap-3">
           <RouterLink :to="{ name: 'library' }" class="btn btn-primary">
@@ -40,7 +40,7 @@ const features = [
         </div>
       </div>
 
-      <!-- Contoh tampilan (ilustrasi, bukan data nyata) -->
+      <!-- Contoh tampilan -->
       <div class="relative">
         <div class="pointer-events-none absolute -inset-6 rounded-[2rem] bg-amber/20 blur-3xl" />
         <div class="card relative space-y-5 p-6" aria-label="Contoh tampilan hasil analisis">
@@ -50,12 +50,11 @@ const features = [
           </div>
           <div class="flex items-center gap-3">
             <span class="font-display text-4xl font-semibold text-navy">Teen</span>
-            <span class="chip" :class="RATINGS.Teen.cls"><Icon :icon="RATINGS.Teen.icon" class="size-3.5" />13+</span>
           </div>
           <div class="grid grid-cols-3 gap-3 text-center">
             <div class="rounded-xl bg-paper p-3"><p class="font-display text-2xl font-semibold text-navy">3,5%</p><p class="text-[11px] text-muted">Konten dewasa</p></div>
-            <div class="rounded-xl bg-paper p-3"><p class="font-display text-2xl font-semibold text-navy">41</p><p class="text-[11px] text-muted">Bobot cerita</p></div>
-            <div class="rounded-xl bg-paper p-3"><p class="font-display text-2xl font-semibold text-navy">Sedih</p><p class="text-[11px] text-muted">Emosi dominan</p></div>
+            <div class="rounded-xl bg-paper p-3"><p class="font-display text-2xl font-semibold text-navy">13+</p><p class="text-[11px] text-muted">Rentang Usia</p></div>
+            <div class="rounded-xl bg-paper p-3"><p class="font-display text-2xl font-semibold text-navy">10</p><p class="text-[11px] text-muted">Bobot Cerita</p></div>
           </div>
           <div class="space-y-2 font-read text-[15px] leading-relaxed text-ink">
             <p>Hujan turun deras di luar. Suara petir terdengar susul-menyusul.</p>

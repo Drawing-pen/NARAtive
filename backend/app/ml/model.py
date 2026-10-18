@@ -1,4 +1,3 @@
-"""Arsitektur model, harus identik dengan yang dilatih di Colab (Step 10)."""
 import torch
 import torch.nn as nn
 from peft import LoraConfig, TaskType, get_peft_model

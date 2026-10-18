@@ -7,18 +7,18 @@ import Navbar from '@/components/Navbar.vue'
 const props = defineProps({ id: { type: String, required: true } })
 
 const doc = ref(null)
-const open = ref(false)   // laci sidebar di layar kecil
+const open = ref(false)   
 
 async function loadDoc() {
   try {
     doc.value = (await api.get(`/documents/${props.id}`)).data
   } catch {
-    doc.value = null   // halaman di dalam akan menampilkan pesan galatnya sendiri
+    doc.value = null   
   }
 }
 const route = useRoute()
 onMounted(loadDoc)
-watch(() => route.fullPath, loadDoc)   // segarkan info buku saat pindah halaman (mis. analisis baru selesai)
+watch(() => route.fullPath, loadDoc)   
 </script>
 
 <template>
@@ -28,7 +28,7 @@ watch(() => route.fullPath, loadDoc)   // segarkan info buku saat pindah halaman
       <Navbar :id="id" :doc="doc" />
     </aside>
 
-    <!-- Bilah atas + laci di layar kecil -->
+    <!-- Bilah atas -->
     <div class="flex items-center gap-3 border-b border-line bg-white px-4 py-3 lg:hidden">
       <button class="btn btn-quiet btn-sm !px-2.5" aria-label="Buka menu buku" @click="open = true">
         <Icon icon="lucide:menu" class="size-5" />
