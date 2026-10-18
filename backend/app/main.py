@@ -8,19 +8,12 @@ from app.core.config import settings
 from app.services.jobs import start_worker
 from app.services.summarizer import reset_stale
 from app.ml.analyzer import ModelNotInstalled, get_analyzer
-from app.api.routers import documents
-from app.core.security import ensure_default_user
+from app.api.routers import auth, documents
 
 log = logging.getLogger("uvicorn.error")
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        ensure_default_user()
-    except Exception as e:  # tabel belum ada / database belum siap
-        log.warning("Database belum siap (%s). Jalankan: python -m app.db.db_setup", e.__class__.__name__)
-    # Muat model saat server menyala supaya analisis pertama tidak lambat.
     try:
         get_analyzer()
         log.info("Model analisis siap.")
@@ -45,6 +38,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth.router)
 app.include_router(documents.router)
 
 

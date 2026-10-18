@@ -9,7 +9,7 @@ from app.db.database import SessionLocal
 from app.ml.analyzer import get_analyzer, summarize
 from app.db.models import Document
 from app.services import heaviness
-from app.services.summarizer import SummaryError, configured, visible_texts
+from app.services.summarizer import SummaryError, configured
 
 log = logging.getLogger("uvicorn.error")
 
@@ -37,7 +37,7 @@ def process(doc_id: int) -> None:
             p.emotion_score = r["emotion_prob"]
         if configured():
             try:
-                doc.heaviness_ai, doc.heaviness_note = heaviness.rate(doc.title, [c.title for c in doc.chapters], visible_texts(paras))
+                doc.heaviness_ai, doc.heaviness_note = heaviness.rate_document(doc)
             except SummaryError as e:
                 log.warning("Penilaian bobot cerita oleh Gemini dilewati untuk dokumen %s: %s", doc_id, e)
         s = summarize(results, ai=doc.heaviness_ai)

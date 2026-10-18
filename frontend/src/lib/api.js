@@ -1,10 +1,31 @@
 import axios from 'axios'
+import { auth, logout } from '@/lib/auth'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
 })
 
-const FIELD_LABEL = { title: 'Judul' }
+api.interceptors.request.use((config) => {
+  if (auth.token) config.headers.Authorization = `Bearer ${auth.token}`
+  return config
+})
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const url = error.config?.url ?? ''
+    const isAuthCall = url.startsWith('/auth/login') || url.startsWith('/auth/register')
+    if (error.response?.status === 401 && !isAuthCall && auth.token) {
+      logout()
+      const { default: router } = await import('@/router')
+      const current = router.currentRoute.value
+      if (!current.meta.guest) router.replace({ name: 'login', query: { next: current.fullPath, expired: '1' } })
+    }
+    return Promise.reject(error)
+  },
+)
+
+const FIELD_LABEL = { title: 'Judul', name: 'Nama', email: 'Email', password: 'Kata sandi' }
 
 export function errorMessage(error, fallback = 'Terjadi kesalahan. Coba lagi.') {
   if (!error?.response) return 'Tidak dapat terhubung ke server. Pastikan backend sedang berjalan.'

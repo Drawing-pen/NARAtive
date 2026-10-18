@@ -1,6 +1,46 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+class RegisterIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if not v:
+            raise ValueError("Nama tidak boleh kosong.")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def _password_bytes(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Kata sandi terlalu panjang.")
+        return v
+
+
+class LoginIn(BaseModel):
+    email: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class UserOut(BaseModel):
+    id: int
+    name: str
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
 
 
 class DocumentOut(BaseModel):
@@ -64,7 +104,7 @@ class ChapterSummaryOut(BaseModel):
 
 
 class SummaryOut(BaseModel):
-    status: str | None           
+    status: str | None            
     done_chapters: int
     total_chapters: int
     overall: str | None

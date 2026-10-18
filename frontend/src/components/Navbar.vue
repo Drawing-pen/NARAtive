@@ -1,11 +1,20 @@
 <script setup>
+import { useRouter } from 'vue-router'
 import { UPCOMING } from '@/lib/content'
+import { auth, logout } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
 import RatingBadge from '@/components/RatingBadge.vue'
 import TierChip from '@/components/TierChip.vue'
 
 defineProps({ id: { type: String, required: true }, doc: { type: Object, default: null } })
 defineEmits(['navigate'])
+
+const router = useRouter()
+
+function keluar() {
+  logout()
+  router.push({ name: 'home' })
+}
 
 const soon = [...UPCOMING,
   { uc: 'UC-17', icon: 'lucide:image-up', title: 'Ganti cover', tier: 'high' },
@@ -68,6 +77,18 @@ const itemCls =
       </span>
     </nav>
 
-    <div class="mt-auto"><Logo class="scale-90 origin-left" /></div>
+    <div class="mt-auto space-y-4">
+      <div class="flex items-center gap-3 rounded-xl bg-paper p-3">
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-semibold text-navy" :title="auth.user?.name">{{ auth.user?.name }}</p>
+          <p class="truncate text-xs text-muted" :title="auth.user?.email">{{ auth.user?.email }}</p>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm shrink-0" @click="keluar">
+          <Icon icon="lucide:log-out" class="size-4" />
+          Keluar
+        </button>
+      </div>
+      <Logo class="scale-90 origin-left" />
+    </div>
   </div>
 </template>

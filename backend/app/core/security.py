@@ -1,31 +1,55 @@
-from fastapi import Depends
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timedelta, timezone
+
+import bcrypt
+import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.db.database import SessionLocal, get_db
+from app.core.config import settings
+from app.db.database import get_db
 from app.db.models import User
 
+ALGORITHM = "HS256"
 DEFAULT_EMAIL = "standard@narative.local"
 
+bearer = HTTPBearer(auto_error=False)
 
-def _get_or_create_default(db: Session) -> User:
-    user = db.scalar(select(User).where(User.email == DEFAULT_EMAIL))
-    if user is None:
-        user = User(name="Standard User", email=DEFAULT_EMAIL, password_hash="-", tier="free", role="user")
-        db.add(user)
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            user = db.scalar(select(User).where(User.email == DEFAULT_EMAIL))
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        return False
+
+
+def create_access_token(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_minutes)
+    return jwt.encode({"sub": str(user_id), "exp": expire}, settings.secret_key, algorithm=ALGORITHM)
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(status.HTTP_401_UNAUTHORIZED, detail, headers={"WWW-Authenticate": "Bearer"})
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: Session = Depends(get_db),
+) -> User:
+    if credentials is None:
+        raise _unauthorized("Silakan masuk terlebih dahulu.")
+    try:
+        payload = jwt.decode(credentials.credentials, settings.secret_key, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+    except jwt.ExpiredSignatureError:
+        raise _unauthorized("Sesi berakhir. Silakan masuk lagi.")
+    except (jwt.InvalidTokenError, KeyError, ValueError):
+        raise _unauthorized("Sesi tidak valid. Silakan masuk lagi.")
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise _unauthorized("Akun tidak ditemukan atau tidak aktif.")
     return user
-
-
-def ensure_default_user() -> None:
-    with SessionLocal() as db:
-        _get_or_create_default(db)
-
-
-def get_current_user(db: Session = Depends(get_db)) -> User:
-    return _get_or_create_default(db)

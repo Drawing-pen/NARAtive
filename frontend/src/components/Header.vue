@@ -1,7 +1,15 @@
 <script setup>
+import { useRouter } from 'vue-router'
+import { auth, isLoggedIn, logout } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
-import SoonButton from '@/components/SoonButton.vue'
 import TierChip from '@/components/TierChip.vue'
+
+const router = useRouter()
+
+function keluar() {
+  logout()
+  router.push({ name: 'home' })
+}
 
 const nav = [
   { name: 'home', label: 'Beranda' },
@@ -30,9 +38,18 @@ const nav = [
       </div>
 
       <div class="flex shrink-0 items-center gap-2">
-        <TierChip tier="standard" class="hidden lg:inline-flex" />
-        <SoonButton variant="outline" small>Masuk</SoonButton>
-        <SoonButton variant="primary" small class="hidden sm:inline-flex">Daftar</SoonButton>
+        <template v-if="isLoggedIn()">
+          <TierChip tier="standard" class="hidden lg:inline-flex" />
+          <span class="hidden max-w-40 truncate text-sm font-semibold text-navy sm:inline" :title="auth.user?.email">{{ auth.user?.name }}</span>
+          <button type="button" class="btn btn-outline btn-sm" @click="keluar">
+            <Icon icon="lucide:log-out" class="size-4" />
+            Keluar
+          </button>
+        </template>
+        <template v-else>
+          <RouterLink :to="{ name: 'login' }" class="btn btn-outline btn-sm">Masuk</RouterLink>
+          <RouterLink :to="{ name: 'register' }" class="btn btn-primary btn-sm hidden sm:inline-flex">Daftar</RouterLink>
+        </template>
       </div>
     </div>
   </header>

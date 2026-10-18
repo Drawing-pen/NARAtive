@@ -1,6 +1,6 @@
 import json
 
-from app.services.summarizer import SummaryError, _generate, configured
+from app.services.summarizer import SafetyBlock, SummaryError, _generate, configured, visible_texts
 
 SEGMENTS = 12
 CHARS_PER_SEGMENT = 1200
@@ -63,3 +63,11 @@ def rate(title: str, chapter_titles: list[str], paragraphs: list[str]) -> tuple[
     except (ValueError, KeyError, TypeError):
         raise SummaryError("Jawaban penilaian Gemini tidak bisa dibaca.")
     return round(sum(values) / 3 * 10, 1), str(data.get("alasan", "")).strip()[:600]
+
+
+def rate_document(doc) -> tuple[float, str]:
+    titles = [c.title for c in doc.chapters]
+    try:
+        return rate(doc.title, titles, visible_texts(doc.paragraphs))
+    except SafetyBlock:
+        return rate(doc.title, titles, visible_texts(doc.paragraphs, strict=True))

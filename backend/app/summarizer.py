@@ -26,8 +26,9 @@ BATCH_CHARS = 90_000
 BATCH_MAX_CHAPTERS = 20
 MAX_SINGLE_FALLBACK = 3      
 RETRY_WAIT = (5, 15, 40)     
-QUOTA_RETRIES = 4            
-QUOTA_MAX_WAIT = 90          
+QUOTA_RETRIES = 4           
+QUOTA_MAX_WAIT = 90         
+DAILY_BLOCK = 3600           
 UNAVAILABLE = "Rangkuman bab ini tidak dapat dibuat."
 SYSTEM = (
     "Kamu merangkum cerita fiksi/non-fiksi untuk pembaca e-book. Tulis dalam bahasa Indonesia yang jelas dan netral. "
@@ -51,6 +52,7 @@ class QuotaError(SummaryError):
 
 _throttle = threading.Lock()
 _last_call = 0.0
+_blocked: dict[str, float] = {}
 
 
 def _wait_turn() -> None:
@@ -60,6 +62,23 @@ def _wait_turn() -> None:
         if gap > 0:
             time.sleep(gap)
         _last_call = time.monotonic()
+
+
+def _models() -> list[str]:
+    names = [settings.gemini_model.strip(), settings.gemini_fallback_model.strip()]
+    out: list[str] = []
+    for n in names:
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+def _pick_model(models: list[str]) -> str | None:
+    now = time.monotonic()
+    for m in models:
+        if _blocked.get(m, 0.0) <= now:
+            return m
+    return None
 
 
 def _quota_info(detail: str) -> tuple[bool, float | None]:
@@ -96,12 +115,20 @@ def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, tem
         "generationConfig": config,
         "safetySettings": _SAFETY,
     }).encode("utf-8")
-    req = urllib.request.Request(
-        API.format(model=settings.gemini_model), data=body, method="POST",
-        headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key.strip()},
-    )
+    models = _models()
     attempt = quota_hits = 0
     while True:
+        model = _pick_model(models)
+        if model is None:
+            soonest = min(_blocked[m] for m in models) - time.monotonic()
+            if soonest > QUOTA_MAX_WAIT:
+                raise QuotaError("Kuota harian Gemini habis untuk semua model. Coba lagi setelah kuota direset (biasanya tengah malam waktu Pasifik) atau tambahkan model lain di GEMINI_FALLBACK_MODEL.")
+            time.sleep(max(soonest, 0.0) + 0.5)
+            continue
+        req = urllib.request.Request(
+            API.format(model=model), data=body, method="POST",
+            headers={"Content-Type": "application/json", "x-goog-api-key": settings.gemini_api_key.strip()},
+        )
         _wait_turn()
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
@@ -113,14 +140,16 @@ def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, tem
             if e.code == 429:
                 daily, delay = _quota_info(raw)
                 if daily:
-                    raise QuotaError("Kuota harian Gemini habis. Coba lagi setelah kuota direset (biasanya tengah malam waktu Pasifik) atau ganti GEMINI_MODEL.")
-                if quota_hits < QUOTA_RETRIES:
-                    wait = min((delay or RETRY_WAIT[min(quota_hits, len(RETRY_WAIT) - 1)]) + 1, QUOTA_MAX_WAIT)
-                    quota_hits += 1
-                    log.warning("Gemini 429, menunggu %.0f detik lalu mencoba lagi (%d/%d)", wait, quota_hits, QUOTA_RETRIES)
-                    time.sleep(wait)
+                    _blocked[model] = time.monotonic() + DAILY_BLOCK
+                    log.warning("Kuota harian model %s habis.", model)
                     continue
-                raise QuotaError(f"Gemini membatasi permintaan (429): {detail}")
+                quota_hits += 1
+                if quota_hits > QUOTA_RETRIES:
+                    raise QuotaError(f"Gemini membatasi permintaan (429): {detail}")
+                wait = min((delay or RETRY_WAIT[min(quota_hits - 1, len(RETRY_WAIT) - 1)]) + 1, QUOTA_MAX_WAIT)
+                _blocked[model] = time.monotonic() + wait
+                log.warning("Gemini 429 pada model %s, ditahan %.0f detik (%d/%d)", model, wait, quota_hits, QUOTA_RETRIES)
+                continue
             if e.code in (500, 502, 503, 504) and attempt < len(RETRY_WAIT):
                 log.warning("Gemini %s, mencoba lagi dalam %ss", e.code, RETRY_WAIT[attempt])
                 time.sleep(RETRY_WAIT[attempt])

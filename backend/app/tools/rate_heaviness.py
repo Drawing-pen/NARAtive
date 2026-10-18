@@ -3,7 +3,7 @@ import sys
 from app.db.database import SessionLocal
 from app.db.models import Document
 from app.services import heaviness
-from app.services.summarizer import SummaryError, configured, visible_texts
+from app.services.summarizer import SummaryError, configured
 from app.tools.rescore import recompute
 
 
@@ -17,8 +17,7 @@ def main() -> None:
         for doc in docs:
             before = doc.heaviness
             try:
-                texts = visible_texts(doc.paragraphs)
-                doc.heaviness_ai, doc.heaviness_note = heaviness.rate(doc.title, [c.title for c in doc.chapters], texts)
+                doc.heaviness_ai, doc.heaviness_note = heaviness.rate_document(doc)
             except SummaryError as e:
                 print(f"[{doc.id}] {doc.title[:40]}: gagal ({e})")
                 continue
