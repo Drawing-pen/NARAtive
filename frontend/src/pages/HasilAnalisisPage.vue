@@ -253,7 +253,7 @@ onBeforeUnmount(() => clearInterval(timer))
           </article>
         </section>
 
-        <!-- Rincian per dimensi + alasan rating -->
+        <!-- Rincian per dimensi -->
         <section class="card space-y-5 p-6 sm:p-8" aria-labelledby="rincian">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -293,7 +293,8 @@ onBeforeUnmount(() => clearInterval(timer))
                 <h3 class="text-lg font-semibold">{{ f.title }}</h3>
                 <p class="text-sm text-muted">{{ f.desc }}</p>
               </div>
-              <SoonButton class="mt-auto self-start" variant="quiet" small :tier="f.tier">{{ f.action }}</SoonButton>
+              <RouterLink v-if="f.route" :to="{ name: f.route, params: { id } }" class="btn btn-quiet btn-sm mt-auto self-start">{{ f.action }}</RouterLink>
+              <SoonButton v-else class="mt-auto self-start" variant="quiet" small :tier="f.tier">{{ f.action }}</SoonButton>
             </article>
           </div>
         </section>

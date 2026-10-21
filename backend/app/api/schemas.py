@@ -95,6 +95,30 @@ class ParagraphOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CharacterOut(BaseModel):
+    id: int
+    name: str
+    role: str
+    biodata: str | None
+    mention_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class RelationOut(BaseModel):
+    chapter: int
+    a: int
+    b: int
+    type: str
+    weight: int
+
+
+class CharactersOut(BaseModel):
+    status: str | None
+    characters: list[CharacterOut]
+    relations: list[RelationOut]
+
+
 class ChapterSummaryOut(BaseModel):
     number: int
     title: str

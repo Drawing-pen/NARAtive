@@ -9,6 +9,7 @@ from app.db.database import SessionLocal
 from app.ml.analyzer import get_analyzer, summarize
 from app.db.models import Document
 from app.services import heaviness
+from app.services import characters
 from app.services.summarizer import SummaryError, configured
 
 log = logging.getLogger("uvicorn.error")
@@ -46,6 +47,7 @@ def process(doc_id: int) -> None:
         doc.pct_adult, doc.heaviness = s["adult"], s["heaviness"]
         doc.status, doc.analyzed_at = "done", datetime.utcnow()
         db.commit()
+        characters.run(doc_id)
     except Exception:
         log.exception("Analisis dokumen %s gagal", doc_id)
         db.rollback()

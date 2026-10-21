@@ -64,10 +64,16 @@ export const TIERS = {
   high: { label: 'High', cls: 'bg-amber/40 text-navy', icon: 'lucide:lock' },
 }
 
+export const ROLES = {
+  'Tokoh utama': { chip: 'bg-navy text-white', avatar: 'bg-navy text-white', node: 'fill-navy' },
+  'Tokoh pendukung': { chip: 'bg-amber/35 text-navy', avatar: 'bg-amber/40 text-navy', node: 'fill-amber' },
+  'Tokoh figuran': { chip: 'bg-sand text-muted', avatar: 'bg-sand text-muted', node: 'fill-lavender' },
+}
+
 export const UPCOMING = [
-  { uc: 'UC-10', icon: 'lucide:contact-round', title: 'Biodata tokoh', tier: 'middle', action: 'Lihat tokoh',
+  { uc: 'UC-10', icon: 'lucide:contact-round', title: 'Biodata tokoh', tier: 'middle', action: 'Lihat tokoh', route: 'characters',
     desc: 'Daftar tokoh beserta peran (utama/pendukung) dan seberapa sering muncul.' },
-  { uc: 'UC-11', icon: 'lucide:git-fork', title: 'Relasi antar tokoh', tier: 'middle', action: 'Lihat relasi',
+  { uc: 'UC-11', icon: 'lucide:git-fork', title: 'Relasi antar tokoh', tier: 'middle', action: 'Lihat relasi', route: 'relations',
     desc: 'Peta hubungan tokoh (akrab/konflik) yang bisa dilihat per bab.' },
   { uc: 'UC-12', icon: 'lucide:sliders-horizontal', title: 'Profil sensitivitas', tier: 'high', action: 'Atur ambang batas',
     desc: 'Atur sendiri ambang batas Safe Mode untuk kekerasan, konten seksual, dan bahasa kasar.' },

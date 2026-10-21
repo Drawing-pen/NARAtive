@@ -136,6 +136,20 @@ NARAtive_IPPL2026/
         └── assets/
 ```
 
+## Menjalankan dengan Docker (paling mudah)
+
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) dan pastikan sedang berjalan, lalu:
+
+```bash
+git clone https://github.com/Drawing-pen/NARAtive_IPPL2026.git
+cd NARAtive_IPPL2026
+docker compose up --build
+```
+
+Buka <http://localhost:5173>. Database MySQL, migrasi, dan unduhan model (`model_best.pt`, sekitar 1,1 GB, dari [Hugging Face](https://huggingface.co/Roena33/narative-model)) berjalan otomatis pada start pertama. Build pertama memakan beberapa menit dan beberapa GB.
+
+Opsional: bila diberi file `.env`, taruh di folder utama repo (sejajar dengan `docker-compose.yml`). Isinya antara lain `GEMINI_API_KEY` untuk rangkuman dan bobot cerita; tanpa itu aplikasi tetap jalan, hanya fitur Gemini yang mati. Bila `model/model_best.pt` sudah ada, unduhan dilewati.
+
 ## Menjalankan secara lokal
 
 ### 1. Model
@@ -147,7 +161,7 @@ model/model_best.pt
 model/tokenizer_xlmr/
 ```
 
-Berkas ini besar sehingga tidak ikut di-commit. Tanpa berkas ini, analisis tidak bisa berjalan.
+`model_best.pt` besar sehingga tidak ikut di-commit (`tokenizer_xlmr/` ikut). Tanpa berkas ini, analisis tidak bisa berjalan.
 
 ### 2. Backend (Windows, cmd)
 
@@ -167,7 +181,7 @@ DATABASE_URL=mysql+pymysql://USER:PASSWORD@localhost:3306/narative
 SECRET_KEY=isi-string-acak-minimal-32-karakter
 CORS_ORIGINS=http://localhost:5173
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 `GEMINI_API_KEY` dibuat di <https://aistudio.google.com/apikey>. Kosongkan jika belum punya; rating tetap jalan, hanya rangkuman dan penilaian bobot dari Gemini yang tidak tersedia.

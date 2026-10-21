@@ -13,7 +13,7 @@ const router = createRouter({
     { path: '/masuk', name: 'login', component: () => import('@/pages/AuthPage.vue'), props: { mode: 'masuk' }, meta: { bare: true, guest: true } },
     { path: '/daftar', name: 'register', component: () => import('@/pages/AuthPage.vue'), props: { mode: 'daftar' }, meta: { bare: true, guest: true } },
 
-    // Ruang kerja satu buku: sidebar + hasil analisis / mode baca (tanpa header dan footer situs)
+    // Ruang kerja satu buku
     {
       path: '/buku/:id',
       component: () => import('@/pages/Sidebar.vue'),
@@ -23,6 +23,8 @@ const router = createRouter({
         { path: '', name: 'document', component: () => import('@/pages/HasilAnalisisPage.vue'), props: true },
         { path: 'baca', name: 'reader', component: () => import('@/pages/ReadingModePage.vue'), props: true },
         { path: 'rangkuman', name: 'summary', component: () => import('@/pages/SummaryPage.vue'), props: true },
+        { path: 'tokoh', name: 'characters', component: () => import('@/pages/TokohPage.vue'), props: true },
+        { path: 'relasi', name: 'relations', component: () => import('@/pages/RelasiPage.vue'), props: true },
       ],
     },
     { path: '/dokumen/:id', redirect: (to) => `/buku/${to.params.id}` },

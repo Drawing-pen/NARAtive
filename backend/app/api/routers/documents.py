@@ -12,11 +12,12 @@ from app.db.database import get_db
 from app.services.export import build_pdf
 from app.services.jobs import enqueue
 from app.ml.analyzer import model_ready
-from app.db.models import Chapter, Document, Paragraph, User
+from app.db.models import Chapter, Character, CharacterRelation, Document, Paragraph, User
 from app.extraction.epub_utils import EpubError, read_epub
 from app.extraction.pdf_utils import read_pdf
+from app.services import characters as character_service
 from app.services import summarizer
-from app.api.schemas import ChapterOut, DocumentOut, DocumentRename, ParagraphOut, SummaryOut
+from app.api.schemas import ChapterOut, CharactersOut, DocumentOut, DocumentRename, ParagraphOut, RelationOut, SummaryOut
 from app.core.security import get_current_user
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -73,7 +74,7 @@ def upload_document(
     except EpubError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except Exception:
-        log.exception("Unggahan gagal diproses")  
+        log.exception("Unggahan gagal diproses")  #
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "File tidak dapat dibaca atau gagal disimpan. Coba unggah lagi.")
     finally:
         if os.path.exists(stored):
@@ -168,3 +169,37 @@ def create_summary(doc_id: int, user: User = Depends(get_current_user), db: Sess
         db.commit()
         summarizer.start(doc.id)
     return _summary_out(doc)
+
+
+def _characters_out(db: Session, doc: Document) -> CharactersOut:
+    chars = db.scalars(
+        select(Character).where(Character.document_id == doc.id).order_by(Character.mention_count.desc(), Character.id)
+    ).all()
+    rows = db.execute(
+        select(CharacterRelation, Chapter.number)
+        .join(Chapter, Chapter.id == CharacterRelation.chapter_id)
+        .where(Chapter.document_id == doc.id)
+        .order_by(Chapter.number, CharacterRelation.id)
+    ).all()
+    relations = [
+        RelationOut(chapter=number, a=r.character_a_id, b=r.character_b_id, type=r.relation_type, weight=r.weight)
+        for r, number in rows
+    ]
+    return CharactersOut(status=doc.characters_status, characters=chars, relations=relations)
+
+
+@router.get("/{doc_id}/characters", response_model=CharactersOut)
+def get_characters(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _characters_out(db, _own_document(db, user, doc_id))
+
+
+@router.post("/{doc_id}/characters", response_model=CharactersOut, status_code=status.HTTP_202_ACCEPTED)
+def detect_characters(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    doc = _own_document(db, user, doc_id)
+    if doc.status != "done":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Tokoh bisa dideteksi setelah analisis selesai.")
+    if doc.characters_status != "running":
+        doc.characters_status = "running"
+        db.commit()
+        character_service.start(doc.id)
+    return _characters_out(db, doc)

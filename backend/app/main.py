@@ -6,11 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.services.jobs import start_worker
+from app.services import characters as character_service
 from app.services.summarizer import reset_stale
 from app.ml.analyzer import ModelNotInstalled, get_analyzer
 from app.api.routers import auth, documents
 
 log = logging.getLogger("uvicorn.error")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,8 +27,9 @@ async def lifespan(app: FastAPI):
         log.warning("Antrean analisis belum berjalan (%s).", e.__class__.__name__)
     try:
         reset_stale()
+        character_service.reset_stale()
     except Exception as e:
-        log.warning("Status rangkuman belum bisa dipulihkan (%s).", e.__class__.__name__)
+        log.warning("Status rangkuman dan tokoh belum bisa dipulihkan (%s).", e.__class__.__name__)
     yield
 
 

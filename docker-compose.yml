@@ -1,0 +1,55 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: narative
+      MYSQL_USER: narative
+      MYSQL_PASSWORD: ${DB_PASSWORD:-narative}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://narative:${DB_PASSWORD:-narative}@db:3306/narative
+      SECRET_KEY: ${SECRET_KEY:-narative-dev-secret-ganti-kalau-dipublikasikan-32-karakter}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      MODEL_DIR: /model
+      MODEL_URL: ${MODEL_URL:-https://huggingface.co/Roena33/narative-model/resolve/main/model_best.pt}
+      UPLOAD_DIR: /app/uploads
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+    volumes:
+      - ./model:/model
+      - uploads:/app/uploads
+      - hf_cache:/app/.cache/huggingface
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  db_data:
+  uploads:
+  hf_cache:

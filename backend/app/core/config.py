@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     gemini_fallback_model: str = ""
     gemini_min_interval: float = 6.0
+    ner_model: str = "Davlan/xlm-roberta-base-ner-hrl"
     seconds_per_paragraph: float = 0.5
 
 

@@ -3,6 +3,5 @@ node_modules/
 __pycache__/
 .env
 model/*.pt
-model/tokenizer_xlmr/
 uploads/
 *.pt

@@ -16,7 +16,7 @@ function keluar() {
   router.push({ name: 'home' })
 }
 
-const soon = [...UPCOMING,
+const soon = [...UPCOMING.filter((f) => !f.route),
   { uc: 'UC-17', icon: 'lucide:image-up', title: 'Ganti cover', tier: 'high' },
 ]
 
@@ -59,6 +59,14 @@ const itemCls =
       <RouterLink :to="{ name: 'summary', params: { id } }" :class="itemCls" @click="$emit('navigate')">
         <Icon icon="lucide:scroll-text" class="size-5" />
         Rangkuman
+      </RouterLink>
+      <RouterLink :to="{ name: 'characters', params: { id } }" :class="itemCls" @click="$emit('navigate')">
+        <Icon icon="lucide:contact-round" class="size-5" />
+        Biodata tokoh
+      </RouterLink>
+      <RouterLink :to="{ name: 'relations', params: { id } }" :class="itemCls" @click="$emit('navigate')">
+        <Icon icon="lucide:git-fork" class="size-5" />
+        Relasi tokoh
       </RouterLink>
     </nav>
 
