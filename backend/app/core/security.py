@@ -53,3 +53,24 @@ def get_current_user(
     if user is None or not user.is_active:
         raise _unauthorized("Akun tidak ditemukan atau tidak aktif.")
     return user
+
+
+TIER_RANK = {"free": 0, "middle": 1, "high": 2}
+TIER_LABEL = {"middle": "Middle", "high": "High"}
+
+
+def has_tier(user: User, minimum: str) -> bool:
+    return TIER_RANK.get(user.access_tier, 0) >= TIER_RANK[minimum]
+
+
+def ensure_tier(user: User, minimum: str) -> None:
+    if not has_tier(user, minimum):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"Fitur ini khusus pengguna {TIER_LABEL[minimum]} Tier.")
+
+
+def require_tier(minimum: str):
+    """Dependency: tolak (403) pengguna yang tingkatan akunnya di bawah `minimum`."""
+    def dependency(user: User = Depends(get_current_user)) -> User:
+        ensure_tier(user, minimum)
+        return user
+    return dependency

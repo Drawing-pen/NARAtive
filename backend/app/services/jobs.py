@@ -7,7 +7,8 @@ from sqlalchemy import select
 
 from app.db.database import SessionLocal
 from app.ml.analyzer import get_analyzer, summarize
-from app.db.models import Document
+from app.core.security import has_tier
+from app.db.models import Document, User
 from app.services import heaviness
 from app.services import characters
 from app.services.summarizer import SummaryError, configured
@@ -47,7 +48,9 @@ def process(doc_id: int) -> None:
         doc.pct_adult, doc.heaviness = s["adult"], s["heaviness"]
         doc.status, doc.analyzed_at = "done", datetime.utcnow()
         db.commit()
-        characters.run(doc_id)
+        owner = db.get(User, doc.user_id)
+        if owner is not None and has_tier(owner, "middle"):
+            characters.run(doc_id)
     except Exception:
         log.exception("Analisis dokumen %s gagal", doc_id)
         db.rollback()

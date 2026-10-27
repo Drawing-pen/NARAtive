@@ -1,7 +1,10 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { errorMessage } from '@/lib/api'
+import { hasTier } from '@/lib/auth'
 import { RATINGS, UPCOMING, formatDate, num } from '@/lib/content'
+import AuthImage from '@/components/AuthImage.vue'
+import PictureControls from '@/components/PictureControls.vue'
 import RatingBadge from '@/components/RatingBadge.vue'
 import SoonButton from '@/components/SoonButton.vue'
 import StatusChip from '@/components/StatusChip.vue'
@@ -26,6 +29,12 @@ async function load(silent = false) {
   } finally {
     loading.value = false
   }
+}
+
+const coverVersion = ref(0)
+function coverChanged(has) {
+  doc.value.has_cover = has
+  coverVersion.value += 1
 }
 
 const exporting = ref(false)
@@ -128,11 +137,13 @@ onBeforeUnmount(() => clearInterval(timer))
       <section class="card grid gap-6 p-5 sm:p-8 md:grid-cols-[12rem_1fr] md:gap-10 lg:grid-cols-[13rem_1fr]">
         <div class="mx-auto w-full max-w-[12rem] space-y-3 md:mx-0 md:max-w-none">
           <div class="relative grid aspect-[2/3] place-items-center overflow-hidden rounded-xl bg-navy shadow-sm">
-            <div class="absolute inset-2.5 rounded-lg border border-amber/40" />
-            <span class="font-display text-7xl font-semibold text-amber/90">{{ doc.title.trim().charAt(0).toUpperCase() }}</span>
-            <span class="absolute inset-x-0 bottom-5 text-center text-[11px] tracking-widest text-lavender uppercase">{{ doc.page_count }} halaman</span>
+            <AuthImage :path="`/documents/${doc.id}/cover`" :active="doc.has_cover" :version="coverVersion" :alt="`Cover ${doc.title}`">
+              <div class="absolute inset-2.5 rounded-lg border border-amber/40" />
+              <span class="font-display text-7xl font-semibold text-amber/90">{{ doc.title.trim().charAt(0).toUpperCase() }}</span>
+              <span class="absolute inset-x-0 bottom-5 text-center text-[11px] tracking-widest text-lavender uppercase">{{ doc.page_count }} halaman</span>
+            </AuthImage>
           </div>
-          <SoonButton class="flex w-full [&>button]:w-full" variant="outline" tier="high" icon="lucide:image-up">Ganti cover</SoonButton>
+          <PictureControls :path="`/documents/${doc.id}/cover`" :has-picture="doc.has_cover" label="Ganti cover" @changed="coverChanged" />
         </div>
 
         <div class="flex min-w-0 flex-col gap-5">
@@ -199,7 +210,12 @@ onBeforeUnmount(() => clearInterval(timer))
                 <Icon icon="lucide:scroll-text" class="size-4.5" />
                 Rangkuman
               </RouterLink>
-              <button class="btn btn-outline w-full" :disabled="exporting" @click="downloadPdf">
+              <RouterLink v-if="!hasTier('high')" :to="{ name: 'plans' }" class="btn btn-outline w-full" title="Unduh PDF khusus High Tier">
+                <Icon icon="lucide:lock" class="size-4" />
+                Unduh PDF
+                <TierChip tier="high" />
+              </RouterLink>
+              <button v-else class="btn btn-outline w-full" :disabled="exporting" @click="downloadPdf">
                 <Icon :icon="exporting ? 'lucide:loader-circle' : 'lucide:download'" class="size-4" :class="{ 'animate-spin': exporting }" />
                 {{ exporting ? 'Menyusun PDF…' : 'Unduh hasil (PDF)' }}
               </button>

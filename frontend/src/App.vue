@@ -1,9 +1,12 @@
 <script setup>
+import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { refreshUser } from '@/lib/auth'
 import Header from '@/components/Header.vue'
 import Footer from '@/components/Footer.vue'
 
 const route = useRoute()
+onMounted(refreshUser)
 </script>
 
 <template>

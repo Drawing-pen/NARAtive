@@ -1,6 +1,5 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { UPCOMING } from '@/lib/content'
 import { auth, logout } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
 import RatingBadge from '@/components/RatingBadge.vue'
@@ -15,10 +14,6 @@ function keluar() {
   logout()
   router.push({ name: 'home' })
 }
-
-const soon = [...UPCOMING.filter((f) => !f.route),
-  { uc: 'UC-17', icon: 'lucide:image-up', title: 'Ganti cover', tier: 'high' },
-]
 
 const itemCls =
   'flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-semibold text-navy transition hover:bg-sand aria-[current=page]:bg-navy aria-[current=page]:text-white aria-[current=page]:hover:bg-navy'
@@ -68,21 +63,11 @@ const itemCls =
         <Icon icon="lucide:git-fork" class="size-5" />
         Relasi tokoh
       </RouterLink>
-    </nav>
-
-    <nav class="space-y-1" aria-label="Fitur lanjutan">
-      <p class="eyebrow px-3 pb-1">Fitur lanjutan</p>
-      <span
-        v-for="f in soon"
-        :key="f.uc"
-        class="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-muted/70"
-        :title="`Segera hadir · khusus ${f.tier === 'high' ? 'High' : 'Middle'} User`"
-        aria-disabled="true"
-      >
-        <Icon :icon="f.icon" class="size-5 shrink-0" />
-        <span class="min-w-0 flex-1 truncate">{{ f.title }}</span>
-        <TierChip :tier="f.tier" />
-      </span>
+      <RouterLink :to="{ name: 'sensitivity', params: { id } }" :class="itemCls" @click="$emit('navigate')">
+        <Icon icon="lucide:sliders-horizontal" class="size-5" />
+        <span class="min-w-0 flex-1 truncate">Profil sensitivitas</span>
+        <TierChip tier="high" />
+      </RouterLink>
     </nav>
 
     <div class="mt-auto space-y-4">

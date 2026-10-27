@@ -39,17 +39,17 @@ Rancangan lengkap memuat **19 use case** (UC-01 sampai UC-16 dari SRS, ditambah 
 | UC | Fitur | Aktor | FR | Status |
 |----|-------|-------|----|--------|
 | UC-01 | Mengunggah dokumen e-book (PDF dan EPUB) | Standard | FR-04 | Selesai |
-| UC-02 | Membuat koleksi dari beberapa dokumen | Standard | FR-05 | Belum |
+| UC-02 | Membuat koleksi dari beberapa dokumen | Standard | FR-05 | Selesai (di UI disebut "seri"; tiap buku tetap dianalisis sendiri) |
 | UC-03 | Melihat hasil analisis rating konten | Standard | FR-06 | Selesai (rincian per dimensi dan alasan rating untuk Middle Tier belum) |
 | UC-04 | Membaca e-book hasil analisis | Standard | FR-07 | Selesai |
 | UC-05 | Menerapkan Safe Mode | Standard | FR-08 | Selesai |
 | UC-06 | Menghapus e-book dari koleksi | Standard | FR-09 | Selesai |
-| UC-07 | Membayar fitur premium (Midtrans) | Standard | FR-10, FR-23 | Belum |
-| UC-08 | Melihat riwayat pembayaran | Standard | FR-11 | Belum |
+| UC-07 | Membayar fitur premium (Midtrans) | Standard | FR-10, FR-23 | Selesai (mode simulasi; Midtrans sandbox bila kunci diisi) |
+| UC-08 | Melihat riwayat pembayaran | Standard | FR-11 | Selesai |
 | UC-09 | Melihat rangkuman cerita (per bab dan keseluruhan) | Middle | FR-12 | Selesai |
 | UC-10 | Melihat biodata tokoh | Middle | FR-13 | Belum |
 | UC-11 | Melihat progres relasi antar tokoh | Middle | FR-14 | Belum |
-| UC-12 | Mengatur profil sensitivitas personal | High | FR-15 | Belum |
+| UC-12 | Mengatur profil sensitivitas personal | High | FR-15 | Selesai |
 | UC-13 | Mengunduh hasil analisis (PDF) | High | FR-16 | Selesai |
 | UC-14 | Melihat laporan pendapatan | Admin | FR-17 | Belum |
 | UC-15 | Melihat daftar akun user | Admin | FR-18 | Belum |
@@ -221,6 +221,19 @@ Semua berada di bawah `/documents`.
 | POST | `/documents/{id}/summary` | Mulai pembuatan rangkuman | UC-09 |
 | GET | `/documents/{id}/export` | Unduh hasil analisis (PDF) | UC-13 |
 | PATCH | `/documents/{id}` | Ubah judul | UC-19 |
+| GET | `/collections` | Daftar seri beserta urutan bukunya | UC-02 |
+| POST | `/collections` | Buat seri dari beberapa e-book (berurutan) | UC-02 |
+| PUT | `/collections/{id}` | Ubah nama, urutan, atau isi seri | UC-02 |
+| DELETE | `/collections/{id}` | Bubarkan seri (e-book tidak terhapus) | UC-02 |
+| GET | `/billing/overview` | Tingkatan, pemakaian kuota, harga, bank | UC-07 |
+| POST | `/billing/checkout` | Buat Virtual Account (upgrade atau pay-per-check) | UC-07 |
+| GET | `/billing/transactions` | Riwayat pembayaran | UC-08 |
+| POST | `/billing/transactions/{order_id}/cancel` | Batalkan pembayaran yang menunggu | UC-07 |
+| POST | `/billing/transactions/{order_id}/simulate-pay` | Simulasi bayar (hanya mode simulasi) | UC-07 |
+| POST | `/billing/midtrans/notification` | Webhook status dari Midtrans | UC-07 |
+| GET | `/sensitivity` | Ambang Safe Mode yang berlaku (standar atau personal) | UC-05, UC-12 |
+| PUT | `/sensitivity` | Simpan profil sensitivitas personal (High Tier) | UC-12 |
+| DELETE | `/sensitivity` | Kembalikan ke ambang standar (High Tier) | UC-12 |
 
 ## Perintah yang sering dipakai
 
@@ -230,6 +243,7 @@ Dijalankan dari folder `backend` dengan venv aktif.
 |----------|----------|
 | `python -m alembic upgrade head` | Terapkan migrasi basis data |
 | `python -m uvicorn app.main:app --reload` | Jalankan server backend |
+| `python -m app.tools.atur_tier email free\|middle\|high` | Ubah tingkatan akun secara manual (pembayaran belum tersedia) |
 | `python -m app.tools.rescore` | Hitung ulang rating dari skor tersimpan tanpa menjalankan model |
 | `python -m app.tools.rate_heaviness` | Nilai bobot cerita dokumen lama lewat Gemini lalu hitung ulang |
 | `python -m app.tools.emotion_report` | Sebaran keyakinan emosi untuk menyetel ambang |

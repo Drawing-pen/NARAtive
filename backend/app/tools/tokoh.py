@@ -14,7 +14,7 @@ def report(doc: Document) -> None:
     print(f"  {len(doc.characters)} tokoh:")
     for c in doc.characters:
         print(f"    {c.mention_count:>4}x  {c.name:<28} {c.role}")
-    by_pair = defaultdict(lambda: {"akrab": 0, "konflik": 0, "weight": 0})
+    by_pair = defaultdict(lambda: defaultdict(int))
     for ch in doc.chapters:
         for r in ch.relations:
             pair = (r.character_a.name, r.character_b.name)
@@ -23,14 +23,14 @@ def report(doc: Document) -> None:
     ranked = sorted(by_pair.items(), key=lambda kv: -kv[1]["weight"])[:12]
     print(f"  Relasi terkuat ({len(by_pair)} pasangan, {sum(len(c.relations) for c in doc.chapters)} relasi per bab):")
     for (a, b), v in ranked:
-        print(f"    {a} - {b}: {v['weight']} kemunculan bersama, akrab di {v['akrab']} bab, konflik di {v['konflik']} bab")
+        print(f"    {a} - {b}: {v['weight']} kemunculan bersama, " + ", ".join(f"{k} di {n} bab" for k, n in v.items() if k != "weight"))
     print("  Contoh biodata:")
     for c in doc.characters[:3]:
         print(f"    {c.biodata}")
 
 
 def main() -> None:
-    ids = [int(a) for a in sys.argv[1:]]
+    ids = [int(a) for a in sys.argv[1:] if a.isdigit()]
     with SessionLocal() as db:
         docs = [d for d in db.query(Document).order_by(Document.id) if d.status == "done" and (not ids or d.id in ids)]
         if not docs:
@@ -38,7 +38,7 @@ def main() -> None:
             return
         for doc in docs:
             try:
-                n_char, n_rel = characters.extract(db, doc)
+                characters.extract(db, doc, ai="--ai" in sys.argv)
             except characters.CharacterError as e:
                 print(f"[{doc.id}] {doc.title[:40]}: gagal ({e})")
                 return

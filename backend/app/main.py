@@ -9,7 +9,7 @@ from app.services.jobs import start_worker
 from app.services import characters as character_service
 from app.services.summarizer import reset_stale
 from app.ml.analyzer import ModelNotInstalled, get_analyzer
-from app.api.routers import auth, documents
+from app.api.routers import auth, billing, collections, documents, images, sensitivity
 
 log = logging.getLogger("uvicorn.error")
 
@@ -43,6 +43,10 @@ app.add_middleware(
 )
 app.include_router(auth.router)
 app.include_router(documents.router)
+app.include_router(images.router)
+app.include_router(collections.router)
+app.include_router(billing.router)
+app.include_router(sensitivity.router)
 
 
 @app.get("/health")

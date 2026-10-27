@@ -29,8 +29,18 @@ services:
       MODEL_DIR: /model
       MODEL_URL: ${MODEL_URL:-https://huggingface.co/Roena33/narative-model/resolve/main/model_best.pt}
       UPLOAD_DIR: /app/uploads
+      DEV_UNLOCK_ALL_TIERS: ${DEV_UNLOCK_ALL_TIERS:-false}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-NARAtive <no-reply@narative.local>}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
+      GEMINI_CHARACTER_MODEL: ${GEMINI_CHARACTER_MODEL:-}
     volumes:
       - ./model:/model
       - uploads:/app/uploads

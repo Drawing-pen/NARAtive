@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.schemas import LoginIn, RegisterIn, TokenOut, UserOut
-from app.core.security import create_access_token, get_current_user, hash_password, verify_password
+from app.api.schemas import LoginIn, RegisterIn, RegistrationStarted, ResendIn, TokenOut, UserOut, VerifyIn
+from app.core.security import create_access_token, get_current_user, verify_password
 from app.db.database import get_db
 from app.db.models import User
+from app.services import verification
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -17,19 +17,29 @@ def _token_for(user: User) -> TokenOut:
     return TokenOut(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
 
 
-@router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+def _started(email: str) -> RegistrationStarted:
+    return RegistrationStarted(
+        email=email,
+        expires_in=int(verification.CODE_TTL.total_seconds()),
+        resend_after=int(verification.RESEND_COOLDOWN.total_seconds()),
+    )
+
+
+@router.post("/register", response_model=RegistrationStarted, status_code=status.HTTP_202_ACCEPTED)
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    email = body.email.lower()
-    if db.scalar(select(User).where(User.email == email)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Email sudah terdaftar. Silakan masuk.")
-    user = User(name=body.name, email=email, password_hash=hash_password(body.password), tier="free", role="user")
-    db.add(user)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "Email sudah terdaftar. Silakan masuk.")
-    return _token_for(user)
+    pending = verification.start(db, body.name, body.email.lower(), body.password)
+    return _started(pending.email)
+
+
+@router.post("/register/resend", response_model=RegistrationStarted, status_code=status.HTTP_202_ACCEPTED)
+def resend_code(body: ResendIn, db: Session = Depends(get_db)):
+    pending = verification.resend(db, body.email.lower())
+    return _started(pending.email)
+
+
+@router.post("/register/verify", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+def verify_registration(body: VerifyIn, db: Session = Depends(get_db)):
+    return _token_for(verification.verify(db, body.email.lower(), body.code))
 
 
 @router.post("/login", response_model=TokenOut)

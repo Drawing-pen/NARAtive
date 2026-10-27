@@ -25,6 +25,7 @@ const router = createRouter({
         { path: 'rangkuman', name: 'summary', component: () => import('@/pages/SummaryPage.vue'), props: true },
         { path: 'tokoh', name: 'characters', component: () => import('@/pages/TokohPage.vue'), props: true },
         { path: 'relasi', name: 'relations', component: () => import('@/pages/RelasiPage.vue'), props: true },
+        { path: 'sensitivitas', name: 'sensitivity', component: () => import('@/pages/SensitivitasPage.vue'), props: true },
       ],
     },
     { path: '/dokumen/:id', redirect: (to) => `/buku/${to.params.id}` },

@@ -7,6 +7,7 @@ export function useCharacters(getId) {
   const loading = ref(true)
   const missing = ref(false)
   const error = ref('')
+  const locked = ref(false)
   const starting = ref(false)
   let timer = null
 
@@ -16,20 +17,25 @@ export function useCharacters(getId) {
       const [d, c] = await Promise.all([api.get(`/documents/${id}`), api.get(`/documents/${id}/characters`)])
       doc.value = d.data
       data.value = c.data
+      locked.value = false
       error.value = ''
     } catch (e) {
       if (e.response?.status === 404) missing.value = true
+      else if (e.response?.status === 403) {
+        locked.value = true
+        doc.value = (await api.get(`/documents/${getId()}`).catch(() => null))?.data ?? null
+      }
       else if (!silent) error.value = errorMessage(e, 'Gagal mengambil data tokoh.')
     } finally {
       loading.value = false
     }
   }
 
-  async function start() {
+  async function start(ai = false) {
     starting.value = true
     error.value = ''
     try {
-      const { data: next } = await api.post(`/documents/${getId()}/characters`)
+      const { data: next } = await api.post(`/documents/${getId()}/characters`, null, { params: { ai: ai === true } })
       data.value = next
     } catch (e) {
       error.value = errorMessage(e, 'Gagal memulai pendeteksian tokoh.')
@@ -46,5 +52,5 @@ export function useCharacters(getId) {
   })
   onBeforeUnmount(() => clearInterval(timer))
 
-  return { doc, data, loading, missing, error, starting, start }
+  return { doc, data, loading, missing, error, locked, starting, start }
 }

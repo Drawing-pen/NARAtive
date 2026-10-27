@@ -1,6 +1,8 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { errorMessage } from '@/lib/api'
+import { hasTier } from '@/lib/auth'
+import TierLock from '@/components/TierLock.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -10,6 +12,8 @@ const loading = ref(true)
 const missing = ref(false)
 const error = ref('')
 const starting = ref(false)
+const locked = ref(false)
+const canCreate = computed(() => hasTier('middle'))
 let timer = null
 
 async function load(silent = false) {
@@ -17,9 +21,14 @@ async function load(silent = false) {
     const [d, s] = await Promise.all([api.get(`/documents/${props.id}`), api.get(`/documents/${props.id}/summary`)])
     doc.value = d.data
     sum.value = s.data
+    locked.value = false
     error.value = ''
   } catch (e) {
     if (e.response?.status === 404) missing.value = true
+    else if (e.response?.status === 403) {
+      locked.value = true
+      doc.value = (await api.get(`/documents/${props.id}`).catch(() => null))?.data ?? null
+    }
     else if (!silent) error.value = errorMessage(e, 'Gagal mengambil rangkuman.')
   } finally {
     loading.value = false
@@ -73,7 +82,14 @@ onBeforeUnmount(() => clearInterval(timer))
       </p>
 
       <!-- Analisis belum selesai -->
-      <section v-if="doc.status !== 'done'" class="card grid place-items-center gap-3 px-6 py-14 text-center">
+      <TierLock
+        v-if="locked"
+        tier="middle"
+        title="Fitur khusus Middle Tier"
+        text="Rangkuman cerita tersedia untuk pengguna Middle Tier ke atas. Rangkuman yang sudah pernah dibuat tetap bisa dilihat."
+      />
+
+      <section v-else-if="doc.status !== 'done'" class="card grid place-items-center gap-3 px-6 py-14 text-center">
         <Icon icon="lucide:hourglass" class="size-10 text-lavender" />
         <p class="max-w-md text-sm text-muted">Rangkuman bisa dibuat setelah analisis buku ini selesai.</p>
         <RouterLink :to="{ name: 'document', params: { id } }" class="btn btn-primary btn-sm">Lihat status analisis</RouterLink>
@@ -89,7 +105,7 @@ onBeforeUnmount(() => clearInterval(timer))
             Teks buku dikirim ke layanan Gemini untuk diringkas, dan prosesnya bisa beberapa menit.
           </p>
         </div>
-        <button class="btn btn-primary" :disabled="starting" @click="start">
+        <button v-if="canCreate" class="btn btn-primary" :disabled="starting" @click="start">
           <Icon :icon="starting ? 'lucide:loader-circle' : 'lucide:sparkles'" class="size-4.5" :class="{ 'animate-spin': starting }" />
           Buat rangkuman
         </button>
@@ -116,7 +132,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <h2 class="text-2xl font-semibold">Rangkuman gagal dibuat</h2>
           <p class="max-w-md text-sm text-muted">Layanan rangkuman tidak merespons atau kunci Gemini di server belum benar. Coba lagi sebentar lagi.</p>
         </div>
-        <button class="btn btn-primary btn-sm" :disabled="starting" @click="start">
+        <button v-if="canCreate" class="btn btn-primary btn-sm" :disabled="starting" @click="start">
           <Icon icon="lucide:refresh-cw" class="size-4" />
           Coba lagi
         </button>
@@ -124,13 +140,24 @@ onBeforeUnmount(() => clearInterval(timer))
 
       <!-- Selesai -->
       <template v-else>
+        <section v-if="sum.status === 'partial'" role="status" class="card flex flex-col gap-3 border-amber bg-amber/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <p class="flex items-start gap-2 text-sm text-navy">
+            <Icon icon="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
+            Sebagian bab dirangkum sederhana tanpa AI karena layanan Gemini sedang dibatasi atau menolak teks.
+          </p>
+          <button v-if="canCreate" class="btn btn-primary btn-sm shrink-0" :disabled="starting" @click="start">
+            <Icon icon="lucide:sparkles" class="size-4" />
+            Lanjutkan dengan AI
+          </button>
+        </section>
+
         <section class="card space-y-3 p-6 sm:p-8">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="eyebrow">Keseluruhan buku</p>
               <h2 class="text-xl font-semibold">Ringkasan cerita</h2>
             </div>
-            <button class="btn btn-quiet btn-sm" :disabled="starting" @click="start">
+            <button v-if="canCreate" class="btn btn-quiet btn-sm" :disabled="starting" @click="start">
               <Icon icon="lucide:refresh-cw" class="size-4" />
               Buat ulang
             </button>
@@ -141,7 +168,10 @@ onBeforeUnmount(() => clearInterval(timer))
         <section class="space-y-3" aria-labelledby="per-bab">
           <h2 id="per-bab" class="text-xl font-semibold">Rangkuman per bab</h2>
           <article v-for="c in sum.chapters" :key="c.number" class="card space-y-2 p-5 sm:p-6">
-            <p class="text-xs font-semibold tracking-wide text-muted uppercase">Bab {{ c.number }}</p>
+            <p class="flex flex-wrap items-center gap-2 text-xs font-semibold tracking-wide text-muted uppercase">
+              Bab {{ c.number }}
+              <span v-if="c.summary_source === 'local'" class="chip bg-sand text-navy normal-case">Ringkasan sederhana (tanpa AI)</span>
+            </p>
             <h3 class="text-lg font-semibold">{{ c.title }}</h3>
             <p class="text-[15px] leading-relaxed whitespace-pre-line text-navy/90">{{ c.summary }}</p>
           </article>

@@ -56,7 +56,7 @@ def rate(title: str, chapter_titles: list[str], paragraphs: list[str]) -> tuple[
         f"{RUBRIC}\n\nJudul: {title}\nDaftar bab: {titles}\n\n"
         f"<cuplikan>\n{sample_text(paragraphs)}\n</cuplikan>"
     )
-    raw = _generate(prompt, system=SYSTEM, schema=SCHEMA, temperature=0.0)
+    raw = _generate(prompt, system=SYSTEM, schema=SCHEMA, temperature=0.0, purpose="bobot cerita")
     try:
         data = json.loads(raw)
         values = [max(0, min(10, int(data[k]))) for k in ("kerumitan_konflik", "berat_tema", "beban_membaca")]

@@ -1,6 +1,6 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { auth, isLoggedIn, logout } from '@/lib/auth'
+import { auth, isLoggedIn, logout, tierKey } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
 import TierChip from '@/components/TierChip.vue'
 
@@ -39,7 +39,7 @@ const nav = [
 
       <div class="flex shrink-0 items-center gap-2">
         <template v-if="isLoggedIn()">
-          <TierChip tier="standard" class="hidden lg:inline-flex" />
+          <TierChip :tier="tierKey()" class="hidden lg:inline-flex" />
           <span class="hidden max-w-40 truncate text-sm font-semibold text-navy sm:inline" :title="auth.user?.email">{{ auth.user?.name }}</span>
           <button type="button" class="btn btn-outline btn-sm" @click="keluar">
             <Icon icon="lucide:log-out" class="size-4" />

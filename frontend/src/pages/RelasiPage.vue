@@ -1,12 +1,15 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import api from '@/lib/api'
-import { ROLES } from '@/lib/content'
+import { hasTier } from '@/lib/auth'
+import TierLock from '@/components/TierLock.vue'
+import { RELATION_TYPES, ROLES, relationType } from '@/lib/content'
 import { useCharacters } from '@/lib/characters'
 
 const props = defineProps({ id: { type: String, required: true } })
 
-const { doc, data, loading, missing, error, starting, start } = useCharacters(() => props.id)
+const { doc, data, loading, missing, error, locked, starting, start } = useCharacters(() => props.id)
+const canCreate = computed(() => hasTier('middle'))
 
 const chapters = ref([])
 const selected = ref(0)
@@ -61,12 +64,22 @@ const edges = computed(() => {
   const merged = new Map()
   for (const r of all) {
     const key = `${r.a}-${r.b}`
-    const cur = merged.get(key) ?? { key, a: r.a, b: r.b, weight: 0, conflict: 0 }
+    const cur = merged.get(key) ?? { key, a: r.a, b: r.b, weight: 0, kinds: new Map() }
     cur.weight += r.weight
-    if (r.type === 'konflik') cur.conflict += r.weight
+    const kind = relationType(r.type).key
+    cur.kinds.set(kind, (cur.kinds.get(kind) ?? 0) + r.weight)
     merged.set(key, cur)
   }
-  return [...merged.values()].map((e) => ({ ...e, type: e.conflict / e.weight >= 0.5 ? 'konflik' : 'akrab' }))
+  return [...merged.values()].map(({ kinds, ...e }) => {
+    const known = [...kinds].filter(([k]) => k !== 'kenalan')
+    const pool = known.length ? known : [...kinds]
+    return { ...e, type: pool.sort((x, y) => y[1] - x[1])[0][0] }
+  })
+})
+
+const legend = computed(() => {
+  const present = new Set(edges.value.map((e) => relationType(e.type).key))
+  return Object.entries(RELATION_TYPES).filter(([key]) => present.has(key))
 })
 
 const maxWeight = computed(() => Math.max(1, ...edges.value.map((e) => e.weight)))
@@ -152,7 +165,14 @@ const summaryLabel = computed(
         {{ error }}
       </p>
 
-      <section v-if="doc.status !== 'done'" class="card grid place-items-center gap-3 px-6 py-14 text-center">
+      <TierLock
+        v-if="locked"
+        tier="middle"
+        title="Fitur khusus Middle Tier"
+        text="Deteksi tokoh dan relasi tersedia untuk pengguna Middle Tier ke atas. Hasil yang sudah pernah dibuat tetap bisa dilihat."
+      />
+
+      <section v-else-if="doc.status !== 'done'" class="card grid place-items-center gap-3 px-6 py-14 text-center">
         <Icon icon="lucide:hourglass" class="size-10 text-lavender" />
         <p class="max-w-md text-sm text-muted">Relasi tokoh bisa dilihat setelah analisis buku ini selesai.</p>
         <RouterLink :to="{ name: 'document', params: { id } }" class="btn btn-primary btn-sm">Lihat status analisis</RouterLink>
@@ -164,7 +184,7 @@ const summaryLabel = computed(
           <h2 class="text-2xl font-semibold">Deteksi tokoh dan relasinya</h2>
           <p class="max-w-md text-sm text-muted">Peta relasi disusun dari tokoh yang terdeteksi di buku ini. Prosesnya berjalan di server dan bisa memakan waktu beberapa menit.</p>
         </div>
-        <button class="btn btn-primary" :disabled="starting" @click="start">
+        <button v-if="canCreate" class="btn btn-primary" :disabled="starting" @click="start(false)">
           <Icon :icon="starting ? 'lucide:loader-circle' : 'lucide:scan-search'" class="size-4.5" :class="{ 'animate-spin': starting }" />
           Deteksi tokoh
         </button>
@@ -184,7 +204,7 @@ const summaryLabel = computed(
           <h2 class="text-2xl font-semibold">Tokoh gagal dideteksi</h2>
           <p class="max-w-md text-sm text-muted">Model pengenal nama belum terpasang di server atau tidak bisa diunduh. Coba lagi sebentar lagi.</p>
         </div>
-        <button class="btn btn-primary btn-sm" :disabled="starting" @click="start">
+        <button v-if="canCreate" class="btn btn-primary btn-sm" :disabled="starting" @click="start(false)">
           <Icon icon="lucide:refresh-cw" class="size-4" />
           Coba lagi
         </button>
@@ -222,17 +242,14 @@ const summaryLabel = computed(
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted">
-            <span class="inline-flex items-center gap-2">
-              <svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" class="stroke-navy" stroke-width="3" /></svg>
-              Akrab
-            </span>
-            <span class="inline-flex items-center gap-2">
-              <svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" class="stroke-danger" stroke-width="3" stroke-dasharray="5 3" /></svg>
-              Konflik
+            <span v-for="[key, t] in legend" :key="key" class="inline-flex items-center gap-2">
+              <svg width="28" height="8" aria-hidden="true">
+                <line x1="0" y1="4" x2="28" y2="4" :stroke="t.color" stroke-width="3" :stroke-dasharray="t.dash" stroke-linecap="round" />
+              </svg>
+              {{ t.label }}
             </span>
             <span>Garis lebih tebal = lebih sering muncul bersama</span>
-            <span>Lingkaran lebih besar = lebih sering disebut</span>
-          </div>
+                      </div>
         </section>
 
         <section v-if="!drawn.length" class="card grid place-items-center gap-3 px-6 py-14 text-center">
@@ -252,13 +269,13 @@ const summaryLabel = computed(
                   :x2="e.q.x"
                   :y2="e.q.y"
                   :stroke-width="e.width"
-                  :stroke-dasharray="e.type === 'konflik' ? '7 5' : undefined"
+                  :stroke="relationType(e.type).color"
+                  :stroke-dasharray="relationType(e.type).dash"
                   stroke-linecap="round"
                   class="transition-opacity"
-                  :class="e.type === 'konflik' ? 'stroke-danger' : 'stroke-navy'"
                   :style="{ opacity: edgeOpacity(e) }"
                 >
-                  <title>{{ e.p.name }} dan {{ e.q.name }}: {{ e.type }}, {{ e.weight }} kali muncul bersama</title>
+                  <title>{{ e.p.name }} dan {{ e.q.name }}: {{ relationType(e.type).label }}, {{ e.weight }} kali muncul bersama</title>
                 </line>
               </g>
               <g
@@ -295,7 +312,7 @@ const summaryLabel = computed(
                 <span class="min-w-0 font-semibold text-navy">{{ byId.get(e.a)?.name }} <span class="font-normal text-muted">dan</span> {{ byId.get(e.b)?.name }}</span>
                 <span class="flex items-center gap-3">
                   <span class="text-xs text-muted">{{ e.weight }} kali bersama</span>
-                  <span class="chip" :class="e.type === 'konflik' ? 'bg-danger/10 text-danger' : 'bg-lavender/25 text-navy'">{{ e.type === 'konflik' ? 'Konflik' : 'Akrab' }}</span>
+                  <span class="chip" :style="{ background: relationType(e.type).color + '22', color: relationType(e.type).color }">{{ relationType(e.type).label }}</span>
                 </span>
               </li>
             </ul>
@@ -305,7 +322,7 @@ const summaryLabel = computed(
         <div class="flex flex-wrap items-center justify-between gap-3">
           <p class="flex items-start gap-2 text-xs text-muted sm:max-w-2xl">
             <Icon icon="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
-            Relasi diperkirakan dari tokoh yang disebut berdekatan. Hubungan ditandai konflik bila paragraf kebersamaan mereka banyak bernada marah, kekerasan, atau bahasa kasar, sehingga bisa keliru.
+            Jenis hubungan diperkirakan dari kata-kata di paragraf tempat dua tokoh muncul bersama (misalnya “kekasih”, “sahabat”, “membenci”) dan nada paragrafnya, sehingga bisa keliru. Pasangan yang tidak punya petunjuk jelas ditandai Kenalan.
           </p>
           <RouterLink :to="{ name: 'characters', params: { id } }" class="btn btn-quiet btn-sm">
             <Icon icon="lucide:contact-round" class="size-4" />

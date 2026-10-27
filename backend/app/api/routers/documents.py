@@ -15,10 +15,12 @@ from app.ml.analyzer import model_ready
 from app.db.models import Chapter, Character, CharacterRelation, Document, Paragraph, User
 from app.extraction.epub_utils import EpubError, read_epub
 from app.extraction.pdf_utils import read_pdf
+from app.services import billing, images
 from app.services import characters as character_service
+from app.services import collections as collection_service
 from app.services import summarizer
 from app.api.schemas import ChapterOut, CharactersOut, DocumentOut, DocumentRename, ParagraphOut, RelationOut, SummaryOut
-from app.core.security import get_current_user
+from app.core.security import ensure_tier, get_current_user, require_tier
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 log = logging.getLogger("uvicorn.error")
@@ -56,6 +58,7 @@ def upload_document(
         page_count, chapter_titles, paragraphs = read_epub(stored) if ext == ".epub" else read_pdf(stored)
         if not paragraphs:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "File tidak berisi teks yang dapat dianalisis.")
+        billing.ensure_can_upload(db, user, page_count)
 
         doc = Document(
             user_id=user.id,
@@ -68,6 +71,7 @@ def upload_document(
         doc.chapters = [Chapter(number=i + 1, title=t[:255]) for i, t in enumerate(chapter_titles)]
         doc.paragraphs = [Paragraph(idx=i, chapter_no=n, text=t) for i, (n, t) in enumerate(paragraphs)]
         db.add(doc)
+        billing.consume_analysis(db, user)    # satu transaksi dengan penyimpanan dokumen
         db.commit()
     except HTTPException:
         raise
@@ -94,8 +98,12 @@ def list_documents(user: User = Depends(get_current_user), db: Session = Depends
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = _own_document(db, user, doc_id)
+    pictures = [doc.cover_path, *(c.photo_path for c in doc.characters)]
     db.delete(doc)
+    db.flush()
+    collection_service.prune_empty(db, user.id)
     db.commit()
+    images.remove(*pictures)
 
 
 @router.patch("/{doc_id}", response_model=DocumentOut)
@@ -108,7 +116,7 @@ def rename_document(doc_id: int, body: DocumentRename, user: User = Depends(get_
 
 
 @router.get("/{doc_id}/export")
-def export_document(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def export_document(doc_id: int, user: User = Depends(require_tier("high")), db: Session = Depends(get_db)):
     from app.ml.analyzer import THRESHOLDS
 
     doc = _own_document(db, user, doc_id)
@@ -150,22 +158,25 @@ def _summary_out(doc: Document) -> SummaryOut:
 
 @router.get("/{doc_id}/summary", response_model=SummaryOut)
 def get_summary(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _summary_out(_own_document(db, user, doc_id))
+    doc = _own_document(db, user, doc_id)
+    if doc.summary_status is None:
+        ensure_tier(user, "middle")
+    return _summary_out(doc)
 
 
 @router.post("/{doc_id}/summary", response_model=SummaryOut, status_code=status.HTTP_202_ACCEPTED)
-def create_summary(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_summary(doc_id: int, user: User = Depends(require_tier("middle")), db: Session = Depends(get_db)):
     doc = _own_document(db, user, doc_id)
     if doc.status != "done":
         raise HTTPException(status.HTTP_409_CONFLICT, "Rangkuman bisa dibuat setelah analisis selesai.")
     if not summarizer.configured():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Layanan rangkuman belum diatur di server (GEMINI_API_KEY kosong).")
     if doc.summary_status != "running":
-        resume = doc.summary_status == "failed"
+        resume = doc.summary_status in ("failed", "partial")
         doc.summary_status, doc.summary = "running", None
         if not resume:
             for c in doc.chapters:
-                c.summary = None
+                c.summary, c.summary_source = None, None
         db.commit()
         summarizer.start(doc.id)
     return _summary_out(doc)
@@ -190,16 +201,21 @@ def _characters_out(db: Session, doc: Document) -> CharactersOut:
 
 @router.get("/{doc_id}/characters", response_model=CharactersOut)
 def get_characters(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return _characters_out(db, _own_document(db, user, doc_id))
+    doc = _own_document(db, user, doc_id)
+    if doc.characters_status is None:
+        ensure_tier(user, "middle")
+    return _characters_out(db, doc)
 
 
 @router.post("/{doc_id}/characters", response_model=CharactersOut, status_code=status.HTTP_202_ACCEPTED)
-def detect_characters(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def detect_characters(doc_id: int, ai: bool = False, user: User = Depends(require_tier("middle")), db: Session = Depends(get_db)):
     doc = _own_document(db, user, doc_id)
     if doc.status != "done":
         raise HTTPException(status.HTTP_409_CONFLICT, "Tokoh bisa dideteksi setelah analisis selesai.")
+    if ai and not character_service.character_ai.available():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Biodata AI butuh GEMINI_API_KEY di server.")
     if doc.characters_status != "running":
         doc.characters_status = "running"
         db.commit()
-        character_service.start(doc.id)
+        character_service.start(doc.id, ai)
     return _characters_out(db, doc)

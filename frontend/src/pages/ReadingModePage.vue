@@ -1,8 +1,7 @@
 <script setup>
-import SoonButton from '@/components/SoonButton.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api, { errorMessage } from '@/lib/api'
-import { DIMENSIONS, STANDARD_THRESHOLDS } from '@/lib/content'
+import { DIMENSIONS, STANDARD_SAFE_MODE } from '@/lib/content'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -39,10 +38,12 @@ function persist() {
   }
 }
 
-const SAFE_MODE_DIMENSIONS = ['sexual']
+// ambang Safe Mode: standar, atau profil sensitivitas personal untuk High Tier (UC-12)
+const thresholds = ref(STANDARD_SAFE_MODE)
 function flagsOf(p) {
-  return SAFE_MODE_DIMENSIONS.filter((key) => p[key] !== null && p[key] >= STANDARD_THRESHOLDS[key])
+  return Object.keys(DIMENSIONS).filter((key) => thresholds.value[key] != null && p[key] !== null && p[key] >= thresholds.value[key])
 }
+const onlySexual = (p) => flagsOf(p).every((key) => key === 'sexual')
 const isHidden = (p) => safeMode.value && flagsOf(p).length > 0 && !revealed.has(p.idx)
 
 const chapter = computed(() => chapters.value.find((c) => c.number === chapterNo.value))
@@ -85,6 +86,11 @@ async function load() {
     doc.value = d.data
     chapters.value = c.data
     paragraphs.value = p.data
+    try {
+      thresholds.value = (await api.get('/sensitivity')).data.thresholds
+    } catch {
+      /* profil gagal dimuat: tetap pakai Safe Mode standar */
+    }
   } catch (e) {
     error.value = e.response?.status === 404 ? 'Dokumen tidak ditemukan.' : errorMessage(e, 'Gagal memuat teks e-book.')
   } finally {
@@ -124,7 +130,10 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
           <button class="grid size-9 place-items-center rounded-lg bg-sand text-navy transition hover:bg-line" :aria-label="serif ? 'Ganti ke huruf tanpa serif' : 'Ganti ke huruf serif'" @click="serif = !serif; persist()">
             <Icon :icon="serif ? 'lucide:type' : 'lucide:case-sensitive'" class="size-5" />
           </button>
-          <SoonButton class="hidden md:inline-flex" variant="outline" small tier="high" icon="lucide:sliders-horizontal">Sensitivitas</SoonButton>
+          <RouterLink :to="{ name: 'sensitivity', params: { id } }" class="btn btn-outline btn-sm hidden md:inline-flex" title="Atur ambang batas Safe Mode">
+            <Icon icon="lucide:sliders-horizontal" class="size-4" />
+            Sensitivitas
+          </RouterLink>
           <button v-if="revealedCount" class="btn btn-quiet btn-sm" title="Samarkan kembali semua paragraf yang sudah dibuka di bab ini" @click="revealed.clear()">
             <Icon icon="lucide:eye-off" class="size-4" />
             <span class="hidden sm:inline">Samarkan lagi ({{ revealedCount }})</span>
@@ -201,7 +210,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
               v-if="isHidden(p)"
               type="button"
               class="para group relative block min-h-44 w-full cursor-pointer overflow-hidden rounded-xl text-left"
-              aria-label="Paragraf seksual disamarkan. Ketuk untuk menampilkan."
+              :aria-label="`${onlySexual(p) ? 'Paragraf seksual' : 'Paragraf sensitif'} disamarkan. Ketuk untuk menampilkan.`"
               @click="revealed.add(p.idx)"
             >
               <span class="block px-1 blur-md select-none" aria-hidden="true">{{ p.text }}</span>
@@ -209,7 +218,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
                 <span class="flex max-w-full flex-col items-center gap-2 rounded-xl bg-white/90 px-4 py-3 text-center shadow-sm">
                   <span class="flex items-center gap-2 text-sm font-semibold text-navy">
                     <Icon icon="lucide:shield-check" class="size-4.5 text-danger" />
-                    Adegan seksual disamarkan
+                    {{ onlySexual(p) ? 'Adegan seksual disamarkan' : 'Konten sensitif disamarkan' }}
                   </span>
                   <span class="flex flex-wrap justify-center gap-1.5">
                     <span v-for="key in flagsOf(p)" :key="key" class="chip bg-sand text-navy">

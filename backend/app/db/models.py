@@ -19,8 +19,88 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(10), default="user")      # user | admin
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    tier_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)   # NULL = tidak berbatas waktu
+    extra_checks: Mapped[int] = mapped_column(Integer, default=0, server_default="0")    # sisa analisis pay-per-check
 
     documents: Mapped[list["Document"]] = relationship(back_populates="owner")
+
+    @property
+    def paid_tier(self) -> str:
+        """Tingkatan hasil pembelian; kembali ke free bila langganannya sudah berakhir."""
+        if self.tier != "free" and self.tier_expires_at and self.tier_expires_at <= datetime.utcnow():
+            return "free"
+        return self.tier
+
+    @property
+    def access_tier(self) -> str:
+        """Tingkatan yang berlaku untuk pembatasan fitur (paid_tier, atau high bila DEV_UNLOCK_ALL_TIERS menyala)."""
+        return "high" if settings.dev_unlock_all_tiers else self.paid_tier
+
+
+class EmailVerification(Base):
+    __tablename__ = "email_verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_sent_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class SensitivityProfile(Base):
+    """Ambang batas Safe Mode personal (UC-12, khusus High Tier). NULL = jenis konten itu tidak disamarkan."""
+    __tablename__ = "sensitivity_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    profanity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sexual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    violence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Transaction(Base):
+    """Satu pembayaran lewat Virtual Account: upgrade tingkatan atau pay-per-check (UC-07, UC-08)."""
+    __tablename__ = "transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    order_id: Mapped[str] = mapped_column(String(40), unique=True)
+    kind: Mapped[str] = mapped_column(String(15))                          # upgrade | pay_per_check
+    plan: Mapped[str | None] = mapped_column(String(10), nullable=True)    # middle | high (untuk upgrade)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, server_default="1")   # jumlah analisis (pay-per-check)
+    amount: Mapped[int] = mapped_column(Integer)                           # rupiah
+    bank: Mapped[str] = mapped_column(String(10))
+    va_number: Mapped[str] = mapped_column(String(30))
+    provider: Mapped[str] = mapped_column(String(12))                      # simulated | midtrans
+    status: Mapped[str] = mapped_column(String(10), default="pending")     # pending | paid | failed | expired | cancelled
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UsageQuota(Base):
+    """Pemakaian analisis per bulan; periode baru = baris baru, jadi kuota otomatis ter-reset (FR-22)."""
+    __tablename__ = "usage_quota"
+    __table_args__ = (UniqueConstraint("user_id", "period", name="uq_usage_user_period"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    period: Mapped[str] = mapped_column(String(7))                         # YYYY-MM
+    used: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class Collection(Base):
+    """Seri/koleksi buku yang saling bersambung (UC-02). Tiap buku di dalamnya tetap dokumen sendiri."""
+    __tablename__ = "collections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(150))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Document(Base):
@@ -28,7 +108,9 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    collection_id: Mapped[int | None] = mapped_column(ForeignKey("collections.id", ondelete="SET NULL"), nullable=True, index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")   # urutan dalam koleksi
     title: Mapped[str] = mapped_column(String(255))
     filename: Mapped[str] = mapped_column(String(255))
     page_count: Mapped[int] = mapped_column(Integer)
@@ -48,8 +130,13 @@ class Document(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)                 
     summary_status: Mapped[str | None] = mapped_column(String(10), nullable=True)    
     characters_status: Mapped[str | None] = mapped_column(String(10), nullable=True) 
+    cover_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     owner: Mapped["User"] = relationship(back_populates="documents")
+
+    @property
+    def has_cover(self) -> bool:
+        return bool(self.cover_path)
 
     @property
     def age_range(self) -> str | None:
@@ -76,10 +163,11 @@ class Chapter(Base):
     __tablename__ = "chapters"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
     number: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(255))
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)  
+    summary_source: Mapped[str | None] = mapped_column(String(10), nullable=True)    # ai | local; NULL = data lama (dianggap ai)
 
     document: Mapped["Document"] = relationship(back_populates="chapters")
     relations: Mapped[list["CharacterRelation"]] = relationship(back_populates="chapter", cascade="all, delete-orphan")
@@ -89,7 +177,7 @@ class Paragraph(Base):
     __tablename__ = "paragraphs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
     idx: Mapped[int] = mapped_column(Integer)
     chapter_no: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     text: Mapped[str] = mapped_column(Text)
@@ -112,8 +200,19 @@ class Character(Base):
     biodata: Mapped[str | None] = mapped_column(Text, nullable=True)
     mention_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    aliases: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    age: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    occupation: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    personality: Mapped[str | None] = mapped_column(Text, nullable=True)
+    background: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document: Mapped["Document"] = relationship(back_populates="characters")
+
+    @property
+    def has_photo(self) -> bool:
+        return bool(self.photo_path)
+
     relations_a: Mapped[list["CharacterRelation"]] = relationship(
         back_populates="character_a", foreign_keys="CharacterRelation.character_a_id", cascade="all, delete-orphan"
     )

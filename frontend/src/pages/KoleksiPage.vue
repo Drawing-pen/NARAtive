@@ -1,25 +1,29 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import api, { errorMessage } from '@/lib/api'
-import { formatDate } from '@/lib/content'
-import RatingBadge from '@/components/RatingBadge.vue'
-import SoonButton from '@/components/SoonButton.vue'
-import StatusChip from '@/components/StatusChip.vue'
+import { tierKey } from '@/lib/auth'
+import BookCard from '@/components/BookCard.vue'
+import SeriesCard from '@/components/SeriesCard.vue'
+import SeriesDialog from '@/components/SeriesDialog.vue'
+import SeriesViewer from '@/components/SeriesViewer.vue'
 import TierChip from '@/components/TierChip.vue'
 
 const docs = ref([])
+const collections = ref([])
 const loading = ref(true)
 const loadError = ref('')
 const uploading = ref(false)
 const uploadError = ref('')
+const limitHit = ref(false)    // unggahan ditolak karena batas paket (402): tawarkan halaman paket
 const dragging = ref(false)
 const fileInput = ref(null)
 let timer = null
 
 async function load(silent = false) {
   try {
-    const { data } = await api.get('/documents')
-    docs.value = data
+    const [d, c] = await Promise.all([api.get('/documents'), api.get('/collections')])
+    docs.value = d.data
+    collections.value = c.data
     loadError.value = ''
   } catch (e) {
     if (!silent) loadError.value = errorMessage(e, 'Gagal memuat koleksi. Muat ulang halaman.')
@@ -63,31 +67,93 @@ async function confirmDelete() {
   }
 }
 
-async function upload(file) {
+// Satu per satu agar batas halaman dan kuota diperiksa per file (UC-02); file yang gagal tidak menggagalkan yang lain.
+async function uploadFiles(files) {
   uploadError.value = ''
-  if (!file) return
-  if (!/\.(pdf|epub)$/i.test(file.name)) {
-    uploadError.value = 'Format file tidak didukung. Unggah file berformat PDF atau EPUB.'
-    return
-  }
-  const body = new FormData()
-  body.append('file', file)
+  limitHit.value = false
+  const list = [...files]
+  if (!list.length) return
+  const label = (file, text) => (list.length > 1 ? `${file.name}: ${text}` : text)
+  const created = []
+  const errors = []
   uploading.value = true
   try {
-    await api.post('/documents', body)
+    for (const file of list) {
+      if (!/\.(pdf|epub)$/i.test(file.name)) {
+        errors.push(label(file, 'Format file tidak didukung. Unggah file berformat PDF atau EPUB.'))
+        continue
+      }
+      const body = new FormData()
+      body.append('file', file)
+      try {
+        created.push((await api.post('/documents', body)).data.id)
+      } catch (e) {
+        if (e.response?.status === 402) limitHit.value = true
+        errors.push(label(file, errorMessage(e, 'Gagal menyimpan dokumen. Coba unggah lagi.')))
+      }
+    }
     await load(true)
-  } catch (e) {
-    uploadError.value = errorMessage(e, 'Gagal menyimpan dokumen. Coba unggah lagi.')
   } finally {
     uploading.value = false
     if (fileInput.value) fileInput.value.value = ''
   }
+  uploadError.value = errors.join(' ')
+  if (created.length >= 2) openSeries(null, created)    // beberapa file sekaligus: tawarkan langsung jadi seri
 }
 
 function onDrop(event) {
   dragging.value = false
-  upload(event.dataTransfer.files[0])
+  uploadFiles(event.dataTransfer.files)
 }
+
+// Seri buku (UC-02): kelompok e-book yang saling bersambung
+const seriesDialog = ref(null)    // { series, preselected } saat terbuka
+const savingSeries = ref(false)
+const seriesError = ref('')
+
+const docById = computed(() => new Map(docs.value.map((d) => [d.id, d])))
+const groups = computed(() =>
+  collections.value
+    .map((c) => ({ ...c, books: c.document_ids.map((id) => docById.value.get(id)).filter(Boolean) }))
+    .filter((g) => g.books.length),
+)
+const looseDocs = computed(() => {
+  const grouped = new Set(collections.value.flatMap((c) => c.document_ids))
+  return docs.value.filter((d) => !grouped.has(d.id))
+})
+
+const openGroupId = ref(null)
+const openGroup = computed(() => groups.value.find((g) => g.id === openGroupId.value) ?? null)
+function editFromList(group) {
+  openGroupId.value = null
+  openSeries(group)
+}
+
+function openSeries(series = null, preselected = []) {
+  seriesError.value = ''
+  seriesDialog.value = { series, preselected }
+}
+function closeSeries() {
+  if (!savingSeries.value) seriesDialog.value = null
+}
+async function runSeries(call) {
+  savingSeries.value = true
+  seriesError.value = ''
+  try {
+    await call()
+    await load(true)
+    seriesDialog.value = null
+  } catch (e) {
+    seriesError.value = errorMessage(e, 'Gagal menyimpan seri. Coba lagi.')
+  } finally {
+    savingSeries.value = false
+  }
+}
+const saveSeries = ({ name, ids }) => {
+  const series = seriesDialog.value.series
+  return runSeries(() => (series ? api.put(`/collections/${series.id}`, { name, document_ids: ids }) : api.post('/collections', { name, document_ids: ids })))
+}
+const dissolveSeries = () => runSeries(() => api.delete(`/collections/${seriesDialog.value.series.id}`))
 
 onMounted(() => {
   load()
@@ -114,7 +180,7 @@ onBeforeUnmount(() => clearInterval(timer))
         <div class="space-y-3 rounded-xl bg-paper p-5">
           <div class="flex items-center justify-between gap-3">
             <p class="eyebrow">Akunmu</p>
-            <TierChip tier="standard" />
+            <TierChip :tier="tierKey()" />
           </div>
           <p class="text-sm text-muted">Butuh rincian per dimensi, rangkuman, tokoh, atau unduhan hasil? Itu tersedia di paket yang lebih tinggi.</p>
           <div class="flex flex-wrap gap-2">
@@ -122,7 +188,10 @@ onBeforeUnmount(() => clearInterval(timer))
               <Icon icon="lucide:gem" class="size-4" />
               Lihat paket
             </RouterLink>
-            <SoonButton variant="outline" small icon="lucide:receipt">Riwayat pembayaran</SoonButton>
+            <RouterLink :to="{ name: 'plans', hash: '#riwayat' }" class="btn btn-outline btn-sm">
+              <Icon icon="lucide:receipt" class="size-4" />
+              Riwayat pembayaran
+            </RouterLink>
           </div>
         </div>
       </div>
@@ -142,16 +211,19 @@ onBeforeUnmount(() => clearInterval(timer))
         </span>
         <div class="space-y-1">
           <h2 class="text-xl font-semibold">{{ uploading ? 'Mengunggah dan memeriksa naskah…' : 'Unggah naskah PDF atau EPUB' }}</h2>
-          <p class="text-sm text-muted">Tarik berkas ke sini atau pilih dari perangkat. Analisis dimulai otomatis setelah unggahan.</p>
+          <p class="text-sm text-muted">Tarik berkas ke sini atau pilih dari perangkat. Bisa lebih dari satu sekaligus untuk dijadikan seri. Analisis dimulai otomatis setelah unggahan.</p>
         </div>
-        <input ref="fileInput" type="file" accept="application/pdf,application/epub+zip,.pdf,.epub" class="sr-only" @change="upload($event.target.files[0])" />
+        <input ref="fileInput" type="file" multiple accept="application/pdf,application/epub+zip,.pdf,.epub" class="sr-only" @change="uploadFiles($event.target.files)" />
         <button class="btn btn-primary" :disabled="uploading" @click="fileInput.click()">
           <Icon icon="lucide:folder-open" class="size-4.5" />
           Pilih file PDF / EPUB
         </button>
         <p v-if="uploadError" role="alert" class="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2.5 text-left text-sm text-danger">
           <Icon icon="lucide:circle-alert" class="mt-0.5 size-4 shrink-0" />
-          {{ uploadError }}
+          <span>
+            {{ uploadError }}
+            <RouterLink v-if="limitHit" :to="{ name: 'plans' }" class="font-semibold underline">Lihat paket</RouterLink>
+          </span>
         </p>
       </div>
     </section>
@@ -163,7 +235,10 @@ onBeforeUnmount(() => clearInterval(timer))
           <p class="eyebrow">Perpustakaan</p>
           <h2 class="text-2xl font-semibold">Koleksi e-book</h2>
         </div>
-        <SoonButton variant="outline" small icon="lucide:layers">Buat koleksi dari beberapa e-book</SoonButton>
+        <button class="btn btn-outline btn-sm" :disabled="docs.length < 2" :title="docs.length < 2 ? 'Butuh minimal dua e-book' : ''" @click="openSeries()">
+          <Icon icon="lucide:layers" class="size-4" />
+          Buat seri dari beberapa e-book
+        </button>
       </div>
 
       <p v-if="loadError" role="alert" class="rounded-lg bg-danger/10 px-3 py-2.5 text-sm text-danger">{{ loadError }}</p>
@@ -180,51 +255,25 @@ onBeforeUnmount(() => clearInterval(timer))
       </div>
 
       <ul v-else class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-        <li v-for="doc in docs" :key="doc.id" class="card group relative flex flex-col overflow-hidden p-2.5 transition duration-200 hover:-translate-y-1 hover:border-lavender hover:shadow-lg has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-lavender">
-          <div class="relative grid aspect-[2/3] place-items-center overflow-hidden rounded-xl bg-navy transition duration-200 group-hover:brightness-110">
-            <div class="absolute inset-2.5 rounded-lg border border-amber/40" />
-            <span class="font-display text-7xl font-semibold text-amber/90">{{ doc.title.trim().charAt(0).toUpperCase() }}</span>
-            <span class="absolute inset-x-0 bottom-5 text-center text-[11px] tracking-widest text-lavender uppercase">{{ doc.page_count }} halaman</span>
-          </div>
-
-          <div class="flex flex-1 flex-col gap-3 px-1.5 pt-3 pb-1.5">
-            <div class="space-y-1">
-              <h3 class="line-clamp-2 text-base leading-snug font-semibold transition group-hover:underline decoration-amber decoration-2 underline-offset-4" :title="doc.title">
-                <!-- tautan "membentang": area klik seluruh kartu; tombol di bawah tetap bisa diklik sendiri (z-10) -->
-                <RouterLink :to="{ name: 'document', params: { id: doc.id } }" class="outline-none after:absolute after:inset-0 after:z-0">{{ doc.title }}</RouterLink>
-              </h3>
-              <p class="text-xs text-muted">Diunggah {{ formatDate(doc.created_at) }}</p>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2">
-              <StatusChip :status="doc.status" />
-              <RatingBadge :rating="doc.rating" />
-            </div>
-
-            <div class="relative z-10 mt-auto flex flex-wrap items-center gap-2 pt-1">
-              <template v-if="doc.status === 'done'">
-                <RouterLink :to="{ name: 'document', params: { id: doc.id } }" class="btn btn-quiet btn-sm">
-                  <Icon icon="lucide:chart-no-axes-column" class="size-4" />
-                  Hasil
-                </RouterLink>
-                <RouterLink :to="{ name: 'reader', params: { id: doc.id } }" class="btn btn-primary btn-sm">
-                  <Icon icon="lucide:book-open" class="size-4" />
-                  Baca
-                </RouterLink>
-              </template>
-              <RouterLink v-else-if="doc.status === 'queued' || doc.status === 'analyzing'" :to="{ name: 'document', params: { id: doc.id } }" class="btn btn-quiet btn-sm">
-                <Icon icon="lucide:hourglass" class="size-4" />
-                Lihat progres
-              </RouterLink>
-              <span v-else class="text-sm text-danger">Analisis gagal. Unggah ulang file ini.</span>
-              <button class="btn btn-quiet btn-sm ml-auto !px-2.5 hover:!bg-danger/10 hover:!text-danger" :aria-label="`Hapus ${doc.title}`" title="Hapus dari koleksi" @click="askDelete(doc)">
-                <Icon icon="lucide:trash-2" class="size-4" />
-              </button>
-            </div>
-          </div>
-        </li>
+        <SeriesCard v-for="g in groups" :key="`seri-${g.id}`" :group="g" @open="openGroupId = $event.id" @edit="editFromList" />
+        <BookCard v-for="doc in looseDocs" :key="doc.id" :doc="doc" @delete="askDelete" />
       </ul>
     </section>
+
+    <SeriesDialog
+      v-if="seriesDialog"
+      :docs="docs"
+      :collections="collections"
+      :series="seriesDialog.series"
+      :preselected="seriesDialog.preselected"
+      :saving="savingSeries"
+      :error="seriesError"
+      @save="saveSeries"
+      @dissolve="dissolveSeries"
+      @close="closeSeries"
+    />
+
+    <SeriesViewer v-if="openGroup" :group="openGroup" @close="openGroupId = null" @edit="editFromList" @delete="askDelete" />
 
     <!-- Konfirmasi hapus -->
     <div v-if="toDelete" class="fixed inset-0 z-50 grid place-items-center bg-navy-deep/50 px-4" @click.self="cancelDelete" @keydown.esc="cancelDelete">
