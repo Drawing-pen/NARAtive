@@ -1,142 +1,174 @@
-from collections import Counter
-
 import pytest
 
-from app.services import character_rules as rules
+from app.services import character_ai, characters
+from tests.characters_helpers import build, chunk_result, para, person, relation
 
 
-def para(text, sexual=0.0):
-    return {"text": text, "sexual": sexual}
+def pair_book(extra=()):
+    return [
+        para("Rana dan Dede adalah sahabat karib.", 1),
+        para("Rana pulang sendirian.", 1),
+        para("Rana pulang lagi.", 1),
+        para("Dede menunggu di rumah.", 1),
+        para("Dede menunggu lagi.", 1),
+        *extra,
+    ]
 
 
-def facts_for(name, texts, surfaces=None):
-    paragraphs = [para(t) for t in texts]
-    locs = [(i, name) for i, t in enumerate(texts) if name in t]
-    return rules.facts(paragraphs, locs, Counter(surfaces or {name: len(locs)}))
+PEOPLE = [person("Rana"), person("Dede")]
+GOOD = relation("Rana", "Dede", "sahabat", "Rana dan Dede adalah sahabat karib")
 
 
-def test_gender_needs_three_pronoun_votes():
-    male = facts_for("Budi", ["Budi said that he was tired."] * 3)
-    two = facts_for("Budi", ["Budi said that he was tired."] * 2)
-    assert male["gender"] == "Laki-laki"
-    assert two["gender"] is None
+def edges(result):
+    names = {i: c.name for i, c in enumerate(result.characters)}
+    return [(chapter, names[a], names[b], kind, weight) for chapter, a, b, kind, weight in result.relations]
 
 
-def test_gender_from_female_pronouns():
-    assert facts_for("Siti", ["Siti knew that she had won."] * 3)["gender"] == "Perempuan"
+def test_a_verified_relation_becomes_an_edge_with_its_kind_and_weight():
+    paragraphs = pair_book() + [para("Rana dan Dede berjalan.", 1), para("Rana dan Dede duduk.", 1)]
+    result = build(paragraphs, PEOPLE, [GOOD])
+    [(chapter, a, b, kind, weight)] = edges(result)
+    assert (chapter, {a, b}, kind) == (1, {"Rana", "Dede"}, "sahabat") and weight >= 2
 
 
-def test_mixed_pronouns_without_a_two_to_one_majority_stay_unknown():
-    texts = ["Alex said he was ill."] * 3 + ["Alex said she was ill."] * 2
-    assert facts_for("Alex", texts)["gender"] is None
+def test_edge_ids_are_ordered_and_refer_to_the_cards():
+    paragraphs = pair_book() + [para("Rana dan Dede berjalan.", 1)]
+    result = build(paragraphs, PEOPLE, [GOOD])
+    [(_, a, b, _, _)] = result.relations
+    assert a < b and 0 <= a < len(result.characters) and 0 <= b < len(result.characters)
 
 
-def test_a_title_before_the_name_counts_as_three_votes():
-    assert facts_for("Smith", ["Mr Smith arrived."])["gender"] == "Laki-laki"
-    assert facts_for("Smith", ["Mrs Smith arrived."])["gender"] == "Perempuan"
+def test_evidence_that_is_not_in_the_text_is_dropped():
+    bad = relation("Rana", "Dede", "musuh", "Rana membenci Dede sejak lama sekali")
+    assert build(pair_book(), PEOPLE, [bad]).relations == []
 
 
-def test_a_title_inside_the_surface_form_counts_too():
-    result = rules.facts([para("Pak Budi datang.")], [(0, "Pak Budi")], Counter({"Pak Budi": 1}))
-    assert result["gender"] == "Laki-laki"
+def test_evidence_matching_ignores_case_spacing_and_edge_punctuation():
+    loose = relation("Rana", "Dede", "sahabat", "  “RANA   dan Dede adalah sahabat karib.” ")
+    assert len(build(pair_book() + [para("Rana dan Dede berjalan.", 1)], PEOPLE, [loose]).relations) == 1
 
 
-def test_age_from_a_number_of_years():
-    assert facts_for("Budi", ["Budi berusia 17 tahun.", "Budi, 17 tahun, tertawa."])["age"] == "17 tahun"
-    assert facts_for("Anna", ["Anna was a sixteen-year-old girl."])["age"] == "16 tahun"
-    assert facts_for("Anna", ["Anna, who was 12 years old, sang."])["age"] == "12 tahun"
+def test_the_paragraph_of_the_evidence_must_contain_both_characters():
+    paragraphs = pair_book([para("Mereka tertawa bersama di halaman sekolah.", 1)])
+    weak = relation("Rana", "Dede", "sahabat", "Mereka tertawa bersama di halaman sekolah")
+    assert build(paragraphs, PEOPLE, [weak]).relations == []
 
 
-def test_ages_outside_the_plausible_range_are_ignored():
-    assert facts_for("Budi", ["Budi berusia 150 tahun."])["age"] is None
+def test_the_narrator_counts_as_present_in_the_chapters_they_narrate():
+    paragraphs = [para("Mama selalu menjagaku sejak kecil.", 1)] + [para("Mama masak di dapur.", 1)] * 3 + [para("Aku makan.", 1)] * 3
+    rel = relation("Raib", "Mama", "keluarga", "Mama selalu menjagaku sejak kecil")
+    result = build(paragraphs, [person("Raib"), person("Mama")], [rel], narrator="Raib", pronouns=["aku"])
+    assert [(k) for _, _, _, k, _ in result.relations] == ["keluarga"]
 
 
-def test_life_stage_needs_two_votes():
-    assert facts_for("Kakek", ["Kakek, seorang kakek tua, berjalan."])["age"] == "Lansia"
-    assert facts_for("Budi", ["Budi seorang remaja yang pemalu."])["age"] is None
+def test_unknown_names_and_self_relations_are_dropped():
+    rels = [
+        relation("Rana", "Budi", "teman", "Rana dan Dede adalah sahabat karib"),
+        relation("Rana", "Rana", "teman", "Rana pulang sendirian"),
+        relation("Rana", "Ra", "teman", "Rana pulang sendirian"),
+    ]
+    assert build(pair_book(), [person("Rana", ["Ra"]), person("Dede")], rels).relations == []
 
 
-def test_an_old_age_title_counts_as_a_life_stage():
-    result = rules.facts([para("Kakek Budi datang.")], [(0, "Kakek Budi")], Counter({"Kakek Budi": 1}))
-    assert result["age"] == "Lansia"
+def test_nicknames_resolve_to_the_right_character():
+    rel = relation("Ra", "De", "sahabat", "Rana dan Dede adalah sahabat karib")
+    result = build(pair_book() + [para("Rana dan Dede berjalan.", 1)], [person("Rana", ["Ra"]), person("Dede", ["De"])], [rel])
+    assert len(result.relations) == 1
 
 
-def test_occupation_from_a_title():
-    result = rules.facts([para("Dr. Budi datang.")], [(0, "Dr. Budi")], Counter({"Dr. Budi": 1}))
-    assert result["occupation"] == "Dokter"
+def test_a_name_shared_by_two_characters_does_not_resolve():
+    rel = relation("Sel", "Dede", "sahabat", "Rana dan Dede adalah sahabat karib")
+    assert build(pair_book(), [person("Rana", ["Sel"]), person("Dede", ["Sel"])], [rel]).relations == []
 
 
-def test_occupation_from_words_after_the_name_needs_enough_evidence():
-    strong = facts_for("Budi", ["Budi adalah guru di sekolah."] * 3)
-    weak = facts_for("Budi", ["Budi adalah guru di sekolah."])
-    assert strong["occupation"] == "Guru"
-    assert weak["occupation"] is None
+def test_an_unknown_relation_kind_becomes_acquaintance():
+    rel = relation("Rana", "Dede", "rekan bisnis", "Rana dan Dede adalah sahabat karib")
+    assert edges(build(pair_book(), PEOPLE, [rel]))[0][3] == "kenalan"
 
 
-def test_nothing_is_guessed_without_evidence():
-    result = facts_for("Rana", ["Rana pergi ke pasar.", "Rana pulang."])
-    assert result == {"gender": None, "age": None, "occupation": None}
+def test_each_chapter_takes_the_vote_of_its_own_evidence():
+    paragraphs = (
+        [para("Rana dan Dede adalah sahabat karib.", 1), para("Rana dan Dede bermain.", 1)]
+        + [para("Rana dan Dede saling membenci.", 2), para("Rana dan Dede bertengkar.", 2)]
+    )
+    rels = [
+        relation("Rana", "Dede", "sahabat", "Rana dan Dede adalah sahabat karib"),
+        relation("Rana", "Dede", "musuh", "Rana dan Dede saling membenci"),
+    ]
+    assert [(c, k) for c, _, _, k, _ in edges(build(paragraphs, PEOPLE, rels))] == [(1, "sahabat"), (2, "musuh")]
 
 
-def test_describe_finds_the_first_identifying_phrase():
-    paragraphs = [para("Budi, seorang guru matematika, datang.")]
-    assert rules.describe(paragraphs, [(0, "Budi")]) == "seorang guru matematika"
+def test_a_chapter_without_its_own_vote_takes_the_overall_kind():
+    paragraphs = (
+        [para("Rana dan Dede adalah sahabat karib.", 1), para("Rana dan Dede bermain.", 1)]
+        + [para("Rana dan Dede berjalan.", 2), para("Rana dan Dede duduk.", 2)]
+    )
+    result = build(paragraphs, PEOPLE, [relation("Rana", "Dede", "sahabat", "Rana dan Dede adalah sahabat karib")])
+    assert [(c, k) for c, _, _, k, _ in edges(result)] == [(1, "sahabat"), (2, "sahabat")]
 
 
-def test_describe_works_for_english_phrases():
-    paragraphs = [para("Anna was a quiet girl who loved books.")]
-    assert rules.describe(paragraphs, [(0, "Anna")]) == "a quiet girl who loved books"
+def test_the_most_voted_kind_wins_and_ties_follow_the_priority_order():
+    paragraphs = [para("Rana dan Dede adalah sahabat karib.", 1), para("Rana dan Dede dekat sekali.", 1), para("Rana dan Dede lagi.", 1)]
+    rels = [
+        relation("Rana", "Dede", "teman", "Rana dan Dede adalah sahabat karib"),
+        relation("Rana", "Dede", "pasangan", "Rana dan Dede dekat sekali"),
+    ]
+    assert edges(build(paragraphs, PEOPLE, rels))[0][3] == "pasangan"
+    rels = [
+        relation("Rana", "Dede", "teman", "Rana dan Dede adalah sahabat karib"),
+        relation("Rana", "Dede", "teman", "Rana dan Dede dekat sekali"),
+        relation("Rana", "Dede", "musuh", "Rana dan Dede lagi"),
+    ]
+    assert edges(build(paragraphs, PEOPLE, rels))[0][3] == "teman"
 
 
-def test_describe_returns_nothing_when_there_is_no_phrase():
-    assert rules.describe([para("Rana pergi ke pasar.")], [(0, "Rana")]) is None
+def test_acquaintance_loses_a_tie_against_any_other_kind():
+    paragraphs = [para("Rana dan Dede adalah sahabat karib.", 1), para("Rana dan Dede dekat sekali.", 1), para("Rana dan Dede lagi.", 1)]
+    rels = [
+        relation("Rana", "Dede", "kenalan", "Rana dan Dede adalah sahabat karib"),
+        relation("Rana", "Dede", "teman", "Rana dan Dede dekat sekali"),
+    ]
+    assert edges(build(paragraphs, PEOPLE, rels))[0][3] == "teman"
 
 
-def test_describe_skips_sexual_paragraphs():
-    paragraphs = [para("Budi, seorang kekasih rahasia, datang.", sexual=0.5), para("Budi, seorang guru, datang.")]
-    assert rules.describe(paragraphs, [(0, "Budi"), (1, "Budi")]) == "seorang guru"
+def test_a_pair_the_llm_never_stated_gets_no_edge():
+    paragraphs = [para("Rana dan Dede berjalan.", 1)] * 5
+    assert build(paragraphs, PEOPLE, []).relations == []
 
 
-@pytest.mark.parametrize(
-    "short, long, expected",
-    [
-        (("de",), ("dede", "dering"), True),
-        (("ran",), ("rana", "afifah"), True),
-        (("de",), ("de",), False),
-        (("rana", "a"), ("rana", "afifah"), False),
-        (("d",), ("dede",), False),
-        (("dedekiah",), ("dedekiah", "x"), False),
-        (("budi",), ("andi", "budi"), False),
-        (("de",), ("dedeksekali", "x"), False),
-    ],
-)
-def test_nickname_prefix_rule(short, long, expected):
-    assert rules.prefix_alias(short, long) is expected
+def test_the_relation_belongs_to_the_chapter_of_its_evidence():
+    paragraphs = [para("Rana pulang.", 1)] * 2 + [para("Dede pulang.", 1)] * 2 + [para("Rana dan Dede adalah sahabat karib.", 2)] * 2
+    result = build(paragraphs, PEOPLE, [relation("Rana", "Dede", "sahabat", "Rana dan Dede adalah sahabat karib")])
+    assert [c for c, _, _, _, _ in result.relations] == [2]
 
 
-def test_relationship_votes_count_cue_words_and_phrases():
-    votes = rules.relation_votes("Mereka sahabat karib dan teman baik, sering bertemu.")
-    assert votes["sahabat"] >= 2
-    assert rules.relation_votes("Rana dan Dede berjalan.") == Counter()
+def test_a_weak_chapter_is_kept_only_when_it_has_its_own_evidence():
+    paragraphs = (
+        [para("Rana dan Dede adalah sahabat karib.", 1)]
+        + [para("Rana dan Dede berjalan.", 2), para("Rana pulang.", 2)]
+        + [para("Rana dan Dede bertemu.", 3), para("Dede pulang.", 3), para("Rana pergi.", 3)] * 2
+    )
+    rels = [relation("Rana", "Dede", "sahabat", "Rana dan Dede adalah sahabat karib")]
+    chapters = {c: w for c, _, _, _, w in build(paragraphs, PEOPLE, rels).relations}
+    assert 1 in chapters and chapters[1] >= 1
+    assert 3 in chapters and chapters[3] >= characters.MIN_PAIR_WEIGHT
 
 
-def test_relationship_votes_are_case_insensitive():
-    assert rules.relation_votes("SAHABAT")["sahabat"] == 1
+def test_weight_counts_paragraphs_where_both_are_in_the_window():
+    paragraphs = [para("Rana berjalan.", 1), para("Dede menyusul.", 1), para("Rana dan Dede tiba.", 1), para("Sepi.", 1)]
+    result = build(paragraphs * 2, PEOPLE, [relation("Rana", "Dede", "teman", "Rana dan Dede tiba")])
+    assert edges(result)[0][4] >= 2
 
 
-def test_the_most_voted_kind_wins_with_at_least_two_votes():
-    assert rules.pick_relation(Counter({"sahabat": 3, "teman": 2})) == "sahabat"
-    assert rules.pick_relation(Counter({"sahabat": 1})) is None
-    assert rules.pick_relation(Counter()) is None
+def test_relations_from_a_failed_chunk_are_simply_absent():
+    paragraphs = pair_book() + [para("Rana dan Dede berjalan.", 1)]
+    chunks = character_ai.make_chunks(paragraphs, limit=60)
+    results = [chunk_result(PEOPLE, [GOOD])] + [None] * (len(chunks) - 1)
+    result = characters.build(paragraphs, chunks, results, merge_fn=lambda entries: None)
+    assert result.complete is False
 
 
-def test_ties_are_resolved_by_the_fixed_order_of_kinds():
-    assert rules.pick_relation(Counter({"keluarga": 2, "pasangan": 2})) == "pasangan"
-    assert rules.pick_relation(Counter({"teman": 2, "sahabat": 2})) == "sahabat"
-
-
-def test_conflict_adds_two_votes_for_enemies():
-    assert rules.pick_relation(Counter(), conflict=True) == "musuh"
-    assert rules.pick_relation(Counter({"sahabat": 3}), conflict=True) == "sahabat"
-    assert rules.pick_relation(Counter({"sahabat": 2}), conflict=True) == "sahabat"
-    assert rules.pick_relation(Counter({"musuh": 1, "teman": 2}), conflict=True) == "musuh"
+@pytest.mark.parametrize("kind", ["pasangan", "sahabat", "teman", "keluarga", "musuh", "kenalan"])
+def test_every_known_kind_is_accepted(kind):
+    rel = relation("Rana", "Dede", kind, "Rana dan Dede adalah sahabat karib")
+    assert edges(build(pair_book(), PEOPLE, [rel]))[0][3] == kind

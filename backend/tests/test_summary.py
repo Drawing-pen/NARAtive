@@ -72,6 +72,7 @@ class TestEndpoints:
     def test_needs_the_gemini_key_on_the_server(self, client, db, middle, auth, monkeypatch):
         monkeypatch.undo()
         monkeypatch.setattr(settings, "gemini_api_key", "")
+        monkeypatch.setattr(settings, "router_api_key", "")
         monkeypatch.setattr(summarizer, "start", lambda doc_id: self.started.append(doc_id))
         doc = build_book(db, middle, [("Bab 1", ["Isi."])], summary_status=None)
         res = client.post(f"/documents/{doc.id}/summary", headers=auth(middle))
@@ -428,9 +429,9 @@ class TestRequestLabels:
         gemini.add(("text", json.dumps({"kerumitan_konflik": 4, "berat_tema": 5, "beban_membaca": 6, "alasan": "Sedang."})))
         heaviness.rate("Judul", ["Bab 1"], ["Isi."])
         gemini.add(("text", json.dumps({"tokoh": []})))
-        character_ai.analyze([{"id": 0, "name": "Rana", "snippets": ["Rana pergi."]}])
+        character_ai.merge([{"id": 0, "name": "Rana", "aliases": [], "count": 5, "roles": []}])
         lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("Gemini |")]
-        assert "bobot cerita" in lines[0] and "biodata tokoh" in lines[1]
+        assert "bobot cerita" in lines[0] and "gabung tokoh" in lines[1]
 
 
 class TestRecovery:

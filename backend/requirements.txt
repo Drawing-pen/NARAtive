@@ -7,7 +7,8 @@ pydantic-settings
 python-multipart
 pyjwt
 bcrypt
-pymupdf
+pymupdf==1.28.2
+pymupdf4llm==1.28.2
 python-dotenv
 email-validator
 alembic

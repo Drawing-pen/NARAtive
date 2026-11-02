@@ -12,8 +12,7 @@ const failed = computed(() => props.group.books.filter((d) => d.status === 'fail
 </script>
 
 <template>
-  <!-- dua lapis di belakang kartu depan memberi kesan tumpukan buku -->
-  <li class="group relative pr-3 pb-3">
+  <li class="group relative cursor-pointer pr-3 pb-3">
     <div class="card absolute top-3 right-0 bottom-0 left-3 bg-sand transition-transform duration-200 group-hover:translate-x-0.5 group-hover:translate-y-0.5" aria-hidden="true" />
     <div class="card absolute top-1.5 right-1.5 bottom-1.5 left-1.5 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:translate-y-0.5" aria-hidden="true" />
 
@@ -28,8 +27,7 @@ const failed = computed(() => props.group.books.filter((d) => d.status === 'fail
       <div class="flex flex-1 flex-col gap-3 px-1.5 pt-3 pb-1.5">
         <div class="space-y-1">
           <h3 class="line-clamp-2 text-base leading-snug font-semibold transition group-hover:underline decoration-amber decoration-2 underline-offset-4" :title="group.name">
-            <!-- tombol "membentang": seluruh kartu bisa diklik untuk membuka seri -->
-            <button type="button" class="text-left outline-none after:absolute after:inset-0 after:z-0" :aria-label="`Buka seri ${group.name}, ${group.books.length} buku`" @click="$emit('open', group)">{{ group.name }}</button>
+            <button type="button" class="cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-0" :aria-label="`Buka seri ${group.name}, ${group.books.length} buku`" @click="$emit('open', group)">{{ group.name }}</button>
           </h3>
           <p class="text-xs text-muted">
             <template v-if="busy">{{ busy }} buku sedang dianalisis</template>

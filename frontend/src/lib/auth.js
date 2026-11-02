@@ -59,6 +59,16 @@ export async function verifyRegistration(email, code) {
   apply(data)
 }
 
+export async function requestPasswordReset(email) {
+  const { data } = await api.post('/auth/password/forgot', { email })
+  return data
+}
+
+export async function resetPassword(email, code, newPassword) {
+  const { data } = await api.post('/auth/password/reset', { email, code, new_password: newPassword })
+  apply(data)
+}
+
 // backend menamai paket gratis "free", UI menyebutnya "standard"
 export const tierKey = () => (auth.user?.tier === 'free' || !auth.user?.tier ? 'standard' : auth.user.tier)
 export const isHighTier = () => tierKey() === 'high'
@@ -75,6 +85,21 @@ export async function refreshUser() {
   } catch {
     /* 401 ditangani interceptor; galat lain tidak mengubah sesi */
   }
+}
+
+export async function renameAccount(name) {
+  const { data } = await api.patch('/auth/me', { name })
+  auth.user = data
+  persist(auth.token, data)
+}
+
+export async function changePassword(currentPassword, newPassword) {
+  await api.put('/auth/me/password', { current_password: currentPassword, new_password: newPassword })
+}
+
+export async function deleteAccount(password) {
+  await api.delete('/auth/me', { data: { password } })
+  logout()
 }
 
 export function logout() {

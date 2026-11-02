@@ -29,6 +29,15 @@ def fresh_database():
     yield
 
 
+@pytest.fixture(autouse=True)
+def no_real_router(monkeypatch):
+    """backend/.env pemilik proyek boleh berisi 9router sungguhan; tes tidak boleh menyentuhnya."""
+    from app.core.config import settings
+
+    for field in ("router_base_url", "router_api_key", "router_model"):
+        monkeypatch.setattr(settings, field, "")
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -43,7 +52,7 @@ def db():
 @pytest.fixture
 def outbox(monkeypatch):
     sent = []
-    monkeypatch.setattr(mailer, "send", lambda to, subject, body: sent.append({"to": to, "subject": subject, "body": body}))
+    monkeypatch.setattr(mailer, "send", lambda to, subject, body, html=None: sent.append({"to": to, "subject": subject, "body": body, "html": html}))
     return sent
 
 

@@ -1,7 +1,6 @@
 <script setup>
 import { computed } from 'vue'
 import { hasTier } from '@/lib/auth'
-import { ROLES } from '@/lib/content'
 import AuthImage from '@/components/AuthImage.vue'
 import PictureControls from '@/components/PictureControls.vue'
 import TierLock from '@/components/TierLock.vue'
@@ -12,23 +11,9 @@ const props = defineProps({ id: { type: String, required: true } })
 const { doc, data, loading, missing, error, locked, starting, start } = useCharacters(() => props.id)
 const canCreate = computed(() => hasTier('middle'))
 
-const FIELDS = [
-  ['gender', 'Jenis kelamin'],
-  ['age', 'Usia'],
-  ['occupation', 'Pekerjaan'],
-  ['personality', 'Kepribadian'],
-  ['background', 'Latar belakang'],
-]
-
-const hasProfile = computed(() => (data.value?.characters ?? []).some((c) => c.personality))
-
 function photoChanged(c, has) {
   c.has_photo = has
   c.photoVersion = (c.photoVersion ?? 0) + 1
-}
-
-function facts(c) {
-  return FIELDS.filter(([key]) => c[key] && c[key] !== 'Tidak disebutkan')
 }
 
 function initials(name) {
@@ -56,7 +41,7 @@ function initials(name) {
 
     <template v-else-if="doc">
       <section class="space-y-2">
-        <p class="eyebrow">Biodata tokoh</p>
+        <p class="eyebrow">Deskripsi tokoh</p>
         <h1 class="text-3xl leading-tight font-semibold break-words sm:text-4xl">{{ doc.title }}</h1>
       </section>
 
@@ -83,11 +68,11 @@ function initials(name) {
         <div class="space-y-1">
           <h2 class="text-2xl font-semibold">Deteksi tokoh cerita</h2>
           <p class="max-w-md text-sm text-muted">
-            Sistem mengenali nama tokoh dari teks buku, menggabungkan nama panggilan yang merujuk ke orang yang sama, lalu menyusun biodata dan relasinya.
+            Sistem mengenali nama tokoh dari teks buku, menggabungkan nama panggilan yang merujuk ke orang yang sama, lalu menyusun deskripsi dan relasinya.
             Prosesnya berjalan di server dan bisa memakan waktu beberapa menit.
           </p>
         </div>
-        <button v-if="canCreate" class="btn btn-primary" :disabled="starting" @click="start(false)">
+        <button v-if="canCreate" class="btn btn-primary" :disabled="starting" @click="start()">
           <Icon :icon="starting ? 'lucide:loader-circle' : 'lucide:scan-search'" class="size-4.5" :class="{ 'animate-spin': starting }" />
           Deteksi tokoh
         </button>
@@ -105,9 +90,9 @@ function initials(name) {
         <Icon icon="lucide:circle-x" class="size-12 text-danger" />
         <div class="space-y-1">
           <h2 class="text-2xl font-semibold">Tokoh gagal dideteksi</h2>
-          <p class="max-w-md text-sm text-muted">Model pengenal nama belum terpasang di server atau tidak bisa diunduh. Coba lagi sebentar lagi.</p>
+          <p class="max-w-md text-sm text-muted">Layanan AI belum bisa dihubungi atau gagal membaca buku ini. Coba lagi sebentar lagi.</p>
         </div>
-        <button v-if="canCreate" class="btn btn-primary btn-sm" :disabled="starting" @click="start(false)">
+        <button v-if="canCreate" class="btn btn-primary btn-sm" :disabled="starting" @click="start()">
           <Icon icon="lucide:refresh-cw" class="size-4" />
           Coba lagi
         </button>
@@ -119,7 +104,7 @@ function initials(name) {
           <h2 class="text-2xl font-semibold">Tokoh tidak terdeteksi</h2>
           <p class="max-w-md text-sm text-muted">Sistem tidak menemukan nama tokoh yang cukup sering disebut di buku ini.</p>
         </div>
-        <button v-if="canCreate" class="btn btn-quiet btn-sm" :disabled="starting" @click="start(false)">
+        <button v-if="canCreate" class="btn btn-quiet btn-sm" :disabled="starting" @click="start()">
           <Icon icon="lucide:refresh-cw" class="size-4" />
           Deteksi ulang
         </button>
@@ -127,55 +112,34 @@ function initials(name) {
 
       <template v-else>
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <p class="text-sm text-muted">{{ data.characters.length }} tokoh terdeteksi, diurutkan dari yang paling berperan dalam cerita.</p>
+          <p class="text-sm text-muted">{{ data.characters.length }} tokoh terdeteksi, diurutkan dari yang paling sering disebut.</p>
           <div class="flex flex-wrap gap-2">
             <RouterLink :to="{ name: 'relations', params: { id } }" class="btn btn-primary btn-sm">
               <Icon icon="lucide:git-fork" class="size-4" />
               Lihat relasi tokoh
             </RouterLink>
-            <button v-if="canCreate" class="btn btn-quiet btn-sm" :disabled="starting" title="Menggunakan 1 permintaan Gemini" @click="start(true)">
-              <Icon icon="lucide:sparkles" class="size-4" />
-              {{ hasProfile ? 'Perbarui biodata AI' : 'Lengkapi biodata dengan AI' }}
-            </button>
-            <button v-if="canCreate" class="btn btn-quiet btn-sm" :disabled="starting" @click="start(false)">
+            <button v-if="canCreate" class="btn btn-quiet btn-sm" :disabled="starting" @click="start()">
               <Icon icon="lucide:refresh-cw" class="size-4" />
               Deteksi ulang
             </button>
           </div>
         </div>
 
-        <p v-if="data.status === 'partial'" role="status" class="flex items-start gap-2 rounded-lg bg-sand px-3 py-2.5 text-sm text-navy">
-          <Icon icon="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-          Biodata AI belum berhasil dibuat, kemungkinan kuota Gemini sedang habis. Coba lagi nanti.
-        </p>
-        <p v-else-if="!hasProfile" class="flex items-start gap-2 text-sm text-muted">
-          <Icon icon="lucide:sparkles" class="mt-0.5 size-4 shrink-0" />
-          Jenis kelamin, usia, dan pekerjaan diambil otomatis dari teks bila disebutkan. Tekan “Lengkapi biodata dengan AI” untuk menambah kepribadian, latar belakang, dan menggabungkan nama panggilan yang lebih rumit (memakai 1 permintaan Gemini).
-        </p>
-
         <section class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" aria-label="Daftar tokoh">
           <article v-for="c in data.characters" :key="c.id" class="card flex flex-col gap-4 p-5">
-            <div class="flex items-start gap-3">
+            <div class="flex items-center gap-3">
               <span
-                class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full font-display text-lg font-semibold"
-                :class="ROLES[c.role]?.avatar"
+                class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-navy font-display text-lg font-semibold text-white"
                 :aria-hidden="!c.has_photo"
               >
                 <AuthImage :path="`/documents/${id}/characters/${c.id}/photo`" :active="c.has_photo" :version="c.photoVersion ?? 0" :alt="`Foto ${c.name}`">{{ initials(c.name) }}</AuthImage>
               </span>
               <div class="min-w-0 flex-1 space-y-1">
                 <h2 class="truncate text-lg leading-snug font-semibold" :title="c.name">{{ c.name }}</h2>
-                <span class="chip" :class="ROLES[c.role]?.chip">{{ c.role }}</span>
               </div>
             </div>
             <p v-if="c.aliases" class="text-xs text-muted">Juga disebut: {{ c.aliases }}</p>
             <p class="text-sm leading-relaxed text-navy/90">{{ c.biodata }}</p>
-            <dl v-if="facts(c).length" class="space-y-2 border-t border-sand pt-3 text-sm">
-              <div v-for="[key, label] in facts(c)" :key="key">
-                <dt class="text-xs font-semibold text-muted">{{ label }}</dt>
-                <dd class="leading-snug text-navy/90">{{ c[key] }}</dd>
-              </div>
-            </dl>
             <PictureControls
               class="mt-auto"
               :path="`/documents/${id}/characters/${c.id}/photo`"
@@ -188,7 +152,7 @@ function initials(name) {
 
         <p class="flex items-start gap-2 text-xs text-muted">
           <Icon icon="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
-          Tokoh dikenali otomatis dari nama di teks dan biodatanya disusun AI dari kutipan cerita, jadi bisa keliru: misalnya dua tokoh yang tergabung atau terpisah, atau nama tempat yang terbaca sebagai tokoh. Rincian yang tidak disebutkan di cerita tidak ditampilkan.
+          Tokoh dikenali otomatis dari nama di teks dan deskripsinya disusun AI dari kutipan cerita, jadi bisa keliru: misalnya dua tokoh yang tergabung atau terpisah, atau nama tempat yang terbaca sebagai tokoh. Urutan tokoh mengikuti jumlah sebutan nama, jadi pada cerita berkata ganti orang pertama (“aku”) tokoh utama bisa tampak di urutan bawah.
         </p>
       </template>
     </template>

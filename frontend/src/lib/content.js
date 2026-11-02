@@ -93,12 +93,6 @@ export const TIERS = {
   high: { label: 'High', cls: 'bg-amber/40 text-navy', icon: 'lucide:lock' },
 }
 
-export const ROLES = {
-  'Tokoh utama': { chip: 'bg-navy text-white', avatar: 'bg-navy text-white', node: 'fill-navy' },
-  'Tokoh pendukung': { chip: 'bg-amber/35 text-navy', avatar: 'bg-amber/40 text-navy', node: 'fill-amber' },
-  'Tokoh figuran': { chip: 'bg-sand text-muted', avatar: 'bg-sand text-muted', node: 'fill-lavender' },
-}
-
 export const RELATION_TYPES = {
   pasangan: { label: 'Pasangan', color: '#d6457a' },
   sahabat: { label: 'Sahabat', color: '#1f8a5b' },
@@ -116,8 +110,8 @@ export function relationType(type) {
 }
 
 export const UPCOMING = [
-  { uc: 'UC-10', icon: 'lucide:contact-round', title: 'Biodata tokoh', tier: 'middle', action: 'Lihat tokoh', route: 'characters',
-    desc: 'Daftar tokoh beserta peran (utama/pendukung) dan seberapa sering muncul.' },
+  { uc: 'UC-10', icon: 'lucide:contact-round', title: 'Deskripsi tokoh', tier: 'middle', action: 'Lihat tokoh', route: 'characters',
+    desc: 'Deskripsi singkat tiap tokoh dan perannya dalam cerita, diurutkan dari yang paling sering disebut.' },
   { uc: 'UC-11', icon: 'lucide:git-fork', title: 'Relasi antar tokoh', tier: 'middle', action: 'Lihat relasi', route: 'relations',
     desc: 'Peta hubungan tokoh (pasangan, sahabat, teman, keluarga, musuh) yang bisa dilihat per bab.' },
   { uc: 'UC-12', icon: 'lucide:sliders-horizontal', title: 'Profil sensitivitas', tier: 'high', action: 'Atur ambang batas', route: 'sensitivity',

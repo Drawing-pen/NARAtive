@@ -30,11 +30,11 @@ NARAtive adalah situs web yang membaca e-book (PDF atau EPUB), menganalisis isin
 
 Platform cerita daring seperti Wattpad dan AO3 membuat pembaca, terutama pembaca muda dan orang tua, sulit menilai kelayakan usia sebuah cerita sebelum membacanya. Penilaian manual oleh editor lambat dan tidak konsisten antar individu. Pembaca juga sering lupa detail cerita seperti tokoh dan alurnya pada novel yang panjang.
 
-NARAtive menjawab dua masalah itu sekaligus: **menilai konten secara otomatis** dan **membantu memahami cerita** lewat rangkuman, biodata tokoh, dan relasi antar tokoh.
+NARAtive menjawab dua masalah itu sekaligus: **menilai konten secara otomatis** dan **membantu memahami cerita** lewat rangkuman, deskripsi tokoh, dan relasi antar tokoh.
 
 ## Fitur dan status pengerjaan
 
-Rancangan lengkap memuat **19 use case** (UC-01 sampai UC-16 dari SRS, ditambah UC-17 sampai UC-19 dari revisi terbaru). Rilis prototype UTS ini mengimplementasikan **8 dari 19 (±42%)**.
+Rancangan lengkap memuat **19 use case** (UC-01 sampai UC-16 dari SRS, ditambah UC-17 sampai UC-19 dari revisi terbaru). Saat ini **16 dari 19** sudah diimplementasikan; yang tersisa adalah panel admin (UC-14 sampai UC-16). Status terperinci dan seluruh keputusan rancangan ada di `docs/SPEC.md`.
 
 | UC | Fitur | Aktor | FR | Status |
 |----|-------|-------|----|--------|
@@ -47,16 +47,18 @@ Rancangan lengkap memuat **19 use case** (UC-01 sampai UC-16 dari SRS, ditambah 
 | UC-07 | Membayar fitur premium (Midtrans) | Standard | FR-10, FR-23 | Selesai (mode simulasi; Midtrans sandbox bila kunci diisi) |
 | UC-08 | Melihat riwayat pembayaran | Standard | FR-11 | Selesai |
 | UC-09 | Melihat rangkuman cerita (per bab dan keseluruhan) | Middle | FR-12 | Selesai |
-| UC-10 | Melihat biodata tokoh | Middle | FR-13 | Belum |
-| UC-11 | Melihat progres relasi antar tokoh | Middle | FR-14 | Belum |
+| UC-10 | Melihat deskripsi tokoh | Middle | FR-13 | Selesai |
+| UC-11 | Melihat relasi antar tokoh | Middle | FR-14 | Selesai |
 | UC-12 | Mengatur profil sensitivitas personal | High | FR-15 | Selesai |
 | UC-13 | Mengunduh hasil analisis (PDF) | High | FR-16 | Selesai |
 | UC-14 | Melihat laporan pendapatan | Admin | FR-17 | Belum |
 | UC-15 | Melihat daftar akun user | Admin | FR-18 | Belum |
 | UC-16 | Menangguhkan akun user | Admin | FR-19 | Belum |
-| UC-17 | Mengganti cover e-book | High | – | Belum (tombol sudah ada di UI) |
-| UC-18 | Mengganti foto profil tokoh | High | – | Belum |
+| UC-17 | Mengganti cover e-book | High | – | Selesai |
+| UC-18 | Mengganti foto profil tokoh | High | – | Selesai |
 | UC-19 | Mengubah judul e-book | Standard | – | Selesai |
+
+Di luar daftar use case, sudah ada juga: pendaftaran dengan verifikasi email (kode 6 angka), **lupa kata sandi** lewat kode email, halaman profil (ubah nama dan kata sandi, riwayat pembayaran, hapus akun), email bermerek (kode verifikasi, atur ulang kata sandi, invoice), dan pembacaan dokumen dengan parser Markdown (judul, cetak tebal dan miring ikut tampil di mode baca).
 
 
 ### Model
@@ -87,19 +89,27 @@ Skor 0 sampai 100 yang menjawab: *seberapa berat dan rumit konflik serta tema ce
 
 Safe Mode standar hanya menyamarkan paragraf **seksual**. Paragraf disamarkan dan bisa dibuka satu per satu dengan mengetuknya. Penyaringan bahasa kasar dan kekerasan, serta pengaturan ambang sendiri, direncanakan lewat Profil Sensitivitas.
 
-### Rangkuman 
+### Rangkuman
 
-Dibuat Gemini per bab lalu digabung menjadi rangkuman keseluruhan, disimpan di basis data agar tidak diproses ulang. 
+Dibuat LLM per bab lalu digabung menjadi rangkuman keseluruhan, disimpan di basis data agar tidak diproses ulang. Paragraf seksual tidak dikirim ke LLM.
+
+### Tokoh dan relasi
+
+Dibaca LLM per potongan bab (tanpa model NER), lalu digabung: nama panggilan satu tokoh disatukan, narator orang pertama (aku, saya, I, dan sebagainya) dikenali, dan tiap kartu tokoh berisi satu deskripsi singkat tentang siapa tokoh itu dan perannya dalam cerita. Jumlah sebutan dan bobot hubungan dihitung kode; hubungan hanya ditampilkan bila ada kutipan di teks yang mendukungnya. Hasil bisa keliru, terutama jenis hubungan.
+
+### Penyedia LLM
+
+**9router** (kompatibel OpenAI, dijalankan lokal) adalah penyedia utama untuk rangkuman, bobot cerita, serta tokoh dan relasi; **Gemini** menjadi cadangan bila 9router gagal. Tanpa keduanya, rating dan Safe Mode tetap berjalan, tetapi rangkuman, bobot cerita dari LLM, dan deteksi tokoh tidak tersedia.
 
 ## Arsitektur dan teknologi
 
 | Lapisan | Teknologi |
 |---------|-----------|
-| Frontend | Vue 3, Vite, Vue Router, Pinia, Tailwind CSS v4, Axios, Iconify |
-| Backend | FastAPI, SQLAlchemy 2, Alembic, PyMuPDF, wordfreq |
+| Frontend | Vue 3, Vite, Vue Router, Tailwind CSS v4, Axios, Iconify, markdown-it, Vitest |
+| Backend | FastAPI, SQLAlchemy 2, Alembic, PyMuPDF dan pymupdf4llm, wordfreq |
 | Basis data | MySQL 8 (SQLite untuk uji cepat) |
 | Model | XLM-RoBERTa base + LoRA (PyTorch, Transformers, PEFT), dilatih di Google Colab |
-| Layanan eksternal | Gemini API (rangkuman dan bobot cerita); Midtrans (pembayaran, rencana) |
+| Layanan eksternal | 9router dan Gemini API (rangkuman, bobot cerita, tokoh dan relasi); Midtrans (pembayaran, atau mode simulasi); SMTP (email) |
 | Komunikasi | REST API, JSON |
 
 Analisis berjalan di **antrean satu pekerja** di sisi server sehingga kegagalan satu dokumen tidak menjatuhkan sistem (NRF-08), dan halaman hasil memperbarui statusnya otomatis selama dokumen belum selesai.
@@ -108,32 +118,36 @@ Analisis berjalan di **antrean satu pekerja** di sisi server sehingga kegagalan 
 
 ```
 NARAtive_IPPL2026/
-├── README.md
-├── docs/                     SRS dan SDD
+├── Readme.md
+├── docker-compose.yml
+├── docs/                     SPEC.md (sumber kebutuhan), CLAUDE.md, SRS dan SDD
 ├── model/                    model_best.pt dan tokenizer_xlmr/ (tidak di-commit)
 ├── backend/
 │   ├── requirements.txt
 │   ├── alembic.ini
-│   ├── alembic/versions/     migrasi 0001–0008
+│   ├── alembic/versions/     migrasi 0001–0020
 │   └── app/
 │       ├── main.py
-│       ├── api/              routers/documents.py, schemas.py
-│       ├── core/             config.py, security.py
+│       ├── api/              routers/ (auth, documents, billing, images, collections, sensitivity), schemas.py
+│       ├── core/             config.py, security.py, plans.py (batas tier)
 │       ├── db/               database.py, models.py, db_setup.py
-│       ├── extraction/       pdf_utils.py, epub_utils.py
+│       ├── extraction/       pdf_utils.py, epub_utils.py (parser lama), pdf_markdown.py,
+│       │                     epub_markdown.py, markdown_utils.py, reader.py (pemilih parser)
 │       ├── ml/               model.py, analyzer.py, lexicon.py
-│       ├── services/         jobs.py, summarizer.py, heaviness.py, export.py
-│       └── tools/            skrip bantu (rescore, rate_heaviness, laporan skor)
+│       ├── services/         jobs, summarizer (satu pintu LLM), heaviness, characters, character_ai,
+│       │                     accounts, verification, password_reset, billing, payments, mailer,
+│       │                     email_templates, images, export, sensitivity, collections
+│       └── tools/            skrip bantu (compare_parsers, tokoh, rescore, rate_heaviness, atur_tier, ...)
 └── frontend/
     └── src/
-        ├── pages/            HomePage, KoleksiPage, HasilAnalisisPage,
-        │                     ReadingModePage, SummaryPage, BerlanggananPage,
-        │                     NotFoundPage, Sidebar
-        ├── components/       Header, Footer, Navbar, Logo, RatingBadge,
-        │                     StatusChip, TierChip, SoonButton, MeterBar
-        ├── lib/              api.js, content.js, icons.js
+        ├── pages/            Home, Koleksi, HasilAnalisis, ReadingMode, Summary, Tokoh, Relasi,
+        │                     Sensitivitas, Profil, Berlangganan, Auth (masuk, daftar, lupa kata sandi),
+        │                     NotFound, Sidebar
+        ├── components/       Header, Footer, Navbar, Logo, BookCard, SeriesCard, CheckoutDialog,
+        │                     RatingBadge, StatusChip, TierChip, UserAvatar, dll.
+        ├── lib/              api.js, auth.js, characters.js, content.js, markdown.js, icons.js
         ├── router/
-        └── assets/
+        └── assets/           logo dan gambar
 ```
 
 ## Menjalankan dengan Docker (paling mudah)
@@ -148,7 +162,7 @@ docker compose up --build
 
 Buka <http://localhost:5173>. Database MySQL, migrasi, dan unduhan model (`model_best.pt`, sekitar 1,1 GB, dari [Hugging Face](https://huggingface.co/Roena33/narative-model)) berjalan otomatis pada start pertama. Build pertama memakan beberapa menit dan beberapa GB.
 
-Opsional: bila diberi file `.env`, taruh di folder utama repo (sejajar dengan `docker-compose.yml`). Isinya antara lain `GEMINI_API_KEY` untuk rangkuman dan bobot cerita; tanpa itu aplikasi tetap jalan, hanya fitur Gemini yang mati. Bila `model/model_best.pt` sudah ada, unduhan dilewati.
+Opsional: bila diberi file `.env`, taruh di folder utama repo (sejajar dengan `docker-compose.yml`). Isinya antara lain `ROUTER_BASE_URL`, `ROUTER_API_KEY`, `ROUTER_MODEL` (9router) dan/atau `GEMINI_API_KEY` untuk fitur LLM; tanpa itu aplikasi tetap jalan, hanya rangkuman, bobot cerita dari LLM, dan deteksi tokoh yang mati. Contoh lengkap ada di `.env.example`. Bila `model/model_best.pt` sudah ada, unduhan dilewati.
 
 ## Menjalankan secara lokal
 
@@ -180,11 +194,16 @@ Buat `backend/.env` (jangan di-commit):
 DATABASE_URL=mysql+pymysql://USER:PASSWORD@localhost:3306/narative
 SECRET_KEY=isi-string-acak-minimal-32-karakter
 CORS_ORIGINS=http://localhost:5173
+FRONTEND_URL=http://localhost:5173
+DOCUMENT_PARSER=auto
+ROUTER_BASE_URL=http://localhost:20128/v1
+ROUTER_API_KEY=
+ROUTER_MODEL=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-`GEMINI_API_KEY` dibuat di <https://aistudio.google.com/apikey>. Kosongkan jika belum punya; rating tetap jalan, hanya rangkuman dan penilaian bobot dari Gemini yang tidak tersedia.
+`ROUTER_*` menunjuk ke 9router lokal (penyedia LLM utama). `GEMINI_API_KEY` dibuat di <https://aistudio.google.com/apikey> dan dipakai sebagai cadangan. Kosongkan keduanya jika belum punya; rating tetap jalan, hanya fitur LLM yang tidak tersedia. Opsional: `SMTP_*` (email; kosong = email hanya dicatat di log), `MIDTRANS_SERVER_KEY` (kosong = pembayaran simulasi), `CHARACTER_PARALLEL` (banyak panggilan LLM paralel untuk tokoh, bawaan 3). Daftar lengkap ada di `backend/.env.example`.
 
 Siapkan basis data lalu jalankan server:
 
@@ -207,10 +226,14 @@ Buka `http://localhost:5173`.
 
 ## Endpoint API
 
-Semua berada di bawah `/documents`.
+Dokumentasi interaktif lengkap ada di `/docs` saat server berjalan. Tabel berikut meringkas endpoint utama.
 
 | Metode | Path | Fungsi | UC |
 |--------|------|--------|----|
+| POST | `/auth/register`, `/auth/register/resend`, `/auth/register/verify` | Daftar dengan kode verifikasi email | – |
+| POST | `/auth/login` | Masuk | – |
+| POST | `/auth/password/forgot`, `/auth/password/reset` | Lupa kata sandi: minta kode, lalu atur ulang | – |
+| GET, PATCH, DELETE | `/auth/me`; PUT `/auth/me/password` | Data akun, ubah nama, hapus akun, ganti kata sandi | – |
 | POST | `/documents` | Unggah PDF atau EPUB dan mulai analisis | UC-01 |
 | GET | `/documents` | Daftar e-book di halaman koleksi | UC-06 |
 | GET | `/documents/{id}` | Hasil analisis dan status | UC-03 |
@@ -221,6 +244,9 @@ Semua berada di bawah `/documents`.
 | POST | `/documents/{id}/summary` | Mulai pembuatan rangkuman | UC-09 |
 | GET | `/documents/{id}/export` | Unduh hasil analisis (PDF) | UC-13 |
 | PATCH | `/documents/{id}` | Ubah judul | UC-19 |
+| GET, POST | `/documents/{id}/characters` | Tokoh dan relasi; POST memulai deteksi | UC-10, UC-11 |
+| PUT, GET, DELETE | `/documents/{id}/cover` | Cover e-book | UC-17 |
+| PUT, GET, DELETE | `/documents/{id}/characters/{character_id}/photo` | Foto tokoh | UC-18 |
 | GET | `/collections` | Daftar seri beserta urutan bukunya | UC-02 |
 | POST | `/collections` | Buat seri dari beberapa e-book (berurutan) | UC-02 |
 | PUT | `/collections/{id}` | Ubah nama, urutan, atau isi seri | UC-02 |
@@ -237,20 +263,23 @@ Semua berada di bawah `/documents`.
 
 ## Perintah yang sering dipakai
 
-Dijalankan dari folder `backend` dengan venv aktif.
+Dijalankan dari folder `backend` dengan venv aktif. Tes frontend: `npx vitest run` di folder `frontend`.
 
 | Perintah | Kegunaan |
 |----------|----------|
 | `python -m alembic upgrade head` | Terapkan migrasi basis data |
 | `python -m uvicorn app.main:app --reload` | Jalankan server backend |
-| `python -m app.tools.atur_tier email free\|middle\|high` | Ubah tingkatan akun secara manual (pembayaran belum tersedia) |
+| `python -m pytest` | Jalankan tes backend (sekitar 6 menit) |
+| `python -m app.tools.compare_parsers berkas.pdf berkas.epub` | Bandingkan parser lama dan Markdown pada naskah |
+| `python -m app.tools.tokoh [id ...]` | Deteksi tokoh dan cetak laporan (butuh 9router atau Gemini) |
+| `python -m app.tools.atur_tier email free\|middle\|high` | Ubah tingkatan akun secara manual untuk uji |
 | `python -m app.tools.rescore` | Hitung ulang rating dari skor tersimpan tanpa menjalankan model |
-| `python -m app.tools.rate_heaviness` | Nilai bobot cerita dokumen lama lewat Gemini lalu hitung ulang |
+| `python -m app.tools.rate_heaviness` | Nilai bobot cerita dokumen lama lewat LLM lalu hitung ulang |
 | `python -m app.tools.emotion_report` | Sebaran keyakinan emosi untuk menyetel ambang |
 
 ## Rencana model bisnis
 
-Rancangan freemium tiga tingkat (belum diterapkan pada prototype):
+Freemium tiga tingkat (sudah diterapkan; batas tier dapat dilihat di `backend/app/core/plans.py`):
 
 | | Free | Middle | High |
 |---|------|--------|------|
@@ -258,12 +287,15 @@ Rancangan freemium tiga tingkat (belum diterapkan pada prototype):
 | Kuota analisis per bulan | 3 | 15 | tanpa batas |
 | Koleksi aktif | 3 | 50 | tanpa batas |
 | Rating dan Safe Mode standar | ✓ | ✓ | ✓ |
-| Rangkuman, biodata tokoh, relasi tokoh | – | ✓ | ✓ |
+| Rangkuman, deskripsi tokoh, relasi tokoh | – | ✓ | ✓ |
 | Profil sensitivitas personal, unduh PDF beranotasi | – | – | ✓ |
 
-Pembayaran direncanakan melalui Midtrans (Virtual Account) beserta invoice otomatis ke email. Batas dihitung per berkas yang diunggah.
+Pembayaran lewat Midtrans (Virtual Account) bila kunci diisi, atau mode simulasi bila kosong, beserta invoice otomatis ke email. Batas halaman dihitung per berkas yang diunggah.
 
 ## Dokumen
 
-- Software Requirements Specification: `docs/SRS NARAtive_11241076_IPPL B.pdf`
+- Spesifikasi kebutuhan yang berlaku (aturan, keputusan, changelog): `docs/SPEC.md`
+- Konteks untuk agen pengembang: `docs/CLAUDE.md`
+- Software Requirements Specification: `docs/SRS NARAtive_11241076_IPPL B (4).pdf`
+- Software Design Description: `docs/SDD NARAtive_11241076_IPPL B (3).pdf`
 - Software Design Document: `docs/SDD NARAtive_11241076_IPPL B.pdf`

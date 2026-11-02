@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api, { errorMessage } from '@/lib/api'
 import { DIMENSIONS, STANDARD_SAFE_MODE } from '@/lib/content'
+import ReadingBlock from '@/components/ReadingBlock.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -244,10 +245,10 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
                 <Icon icon="lucide:eye-off" class="size-3.5" />
                 Samarkan lagi
               </button>
-              <p class="whitespace-pre-line">{{ p.text }}</p>
+              <ReadingBlock :paragraph="p" />
             </div>
 
-            <p v-else class="para whitespace-pre-line" :class="{ 'drop-cap': p.idx === firstVisible }">{{ p.text }}</p>
+            <ReadingBlock v-else class="para" :paragraph="p" :drop-cap="p.idx === firstVisible" />
           </template>
         </div>
 

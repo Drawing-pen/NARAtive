@@ -13,8 +13,8 @@ from app.services.export import build_pdf
 from app.services.jobs import enqueue
 from app.ml.analyzer import model_ready
 from app.db.models import Chapter, Character, CharacterRelation, Document, Paragraph, User
-from app.extraction.epub_utils import EpubError, read_epub
-from app.extraction.pdf_utils import read_pdf
+from app.extraction.epub_utils import EpubError
+from app.extraction.reader import read_document
 from app.services import billing, images
 from app.services import characters as character_service
 from app.services import collections as collection_service
@@ -55,7 +55,8 @@ def upload_document(
     try:
         with open(stored, "wb") as f:
             f.write(file.file.read())
-        page_count, chapter_titles, paragraphs = read_epub(stored) if ext == ".epub" else read_pdf(stored)
+        parsed = read_document(stored, ext)
+        page_count, chapter_titles, paragraphs = parsed.page_count, parsed.titles, parsed.blocks
         if not paragraphs:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "File tidak berisi teks yang dapat dianalisis.")
         billing.ensure_can_upload(db, user, page_count)
@@ -69,7 +70,9 @@ def upload_document(
             status="queued",
         )
         doc.chapters = [Chapter(number=i + 1, title=t[:255]) for i, t in enumerate(chapter_titles)]
-        doc.paragraphs = [Paragraph(idx=i, chapter_no=n, text=t) for i, (n, t) in enumerate(paragraphs)]
+        doc.paragraphs = [
+            Paragraph(idx=i, chapter_no=n, text=b.text, markdown=b.markdown, kind=b.kind) for i, (n, b) in enumerate(paragraphs)
+        ]
         db.add(doc)
         billing.consume_analysis(db, user)    # satu transaksi dengan penyimpanan dokumen
         db.commit()
@@ -81,8 +84,12 @@ def upload_document(
         log.exception("Unggahan gagal diproses")  #
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "File tidak dapat dibaca atau gagal disimpan. Coba unggah lagi.")
     finally:
-        if os.path.exists(stored):
+        try:
             os.remove(stored)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            log.warning("File sementara %s tidak bisa dihapus.", stored)
 
     enqueue(doc.id)
     return doc
@@ -208,14 +215,14 @@ def get_characters(doc_id: int, user: User = Depends(get_current_user), db: Sess
 
 
 @router.post("/{doc_id}/characters", response_model=CharactersOut, status_code=status.HTTP_202_ACCEPTED)
-def detect_characters(doc_id: int, ai: bool = False, user: User = Depends(require_tier("middle")), db: Session = Depends(get_db)):
+def detect_characters(doc_id: int, user: User = Depends(require_tier("middle")), db: Session = Depends(get_db)):
     doc = _own_document(db, user, doc_id)
     if doc.status != "done":
         raise HTTPException(status.HTTP_409_CONFLICT, "Tokoh bisa dideteksi setelah analisis selesai.")
-    if ai and not character_service.character_ai.available():
-        raise HTTPException(status.HTTP_409_CONFLICT, "Biodata AI butuh GEMINI_API_KEY di server.")
+    if not character_service.character_ai.available():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Deteksi tokoh butuh layanan AI (9router atau Gemini) di server.")
     if doc.characters_status != "running":
         doc.characters_status = "running"
         db.commit()
-        character_service.start(doc.id, ai)
+        character_service.start(doc.id)
     return _characters_out(db, doc)

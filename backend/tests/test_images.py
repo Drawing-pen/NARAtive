@@ -194,14 +194,16 @@ def test_listing_exposes_the_flags(client, auth, owner, doc):
     assert {c["name"]: c["has_photo"] for c in chars} == {"Budi": False, "Sari": False}
 
 
-def test_detecting_characters_again_removes_the_old_photos(client, db, auth, owner, upload_dir):
-    from app.services import characters
-    from tests.test_characters_flow import fake_ner, make_story
+def test_detecting_characters_again_removes_the_old_photos(client, db, auth, owner, upload_dir, monkeypatch):
+    from app.services import character_ai, characters
+    from tests.test_characters_flow import FakeLLM, make_story
 
+    monkeypatch.setattr(character_ai, "_generate", FakeLLM())
+    monkeypatch.setattr(character_ai, "configured", lambda: True)
     story = make_story(db, owner)
-    characters.extract(db, story, ner=fake_ner("Rana", "Dede"))
+    characters.extract(db, story)
     first = db.query(models.Character).filter_by(document_id=story.id).first()
     put(client, auth, owner, photo_url(story, first.id))
     assert len(stored(upload_dir)) == 1
-    characters.extract(db, story, ner=fake_ner("Rana", "Dede"))
+    characters.extract(db, story)
     assert stored(upload_dir) == []

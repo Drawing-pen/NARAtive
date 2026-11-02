@@ -10,12 +10,19 @@ class Settings(BaseSettings):
     model_dir: str = "../model"
     upload_dir: str = "uploads"
     cors_origins: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:5173"
+    document_parser: str = "auto"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     gemini_fallback_model: str = ""
     gemini_character_model: str = ""
     gemini_min_interval: float = 6.0
-    ner_model: str = "Davlan/xlm-roberta-base-ner-hrl"
+    # 9router (kompatibel OpenAI): penyedia LLM utama bila ketiganya terisi, Gemini menjadi cadangan
+    router_base_url: str = ""
+    router_api_key: str = ""
+    router_model: str = ""
+    router_timeout: float = 120.0
+    character_parallel: int = 3
     seconds_per_paragraph: float = 0.5
     # Khusus pengembangan: perlakukan semua akun sebagai High Tier agar semua fitur bisa dites tanpa pembayaran
     dev_unlock_all_tiers: bool = False

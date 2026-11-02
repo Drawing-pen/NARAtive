@@ -4,6 +4,7 @@ import { auth, logout } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
 import RatingBadge from '@/components/RatingBadge.vue'
 import TierChip from '@/components/TierChip.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 defineProps({ id: { type: String, required: true }, doc: { type: Object, default: null } })
 defineEmits(['navigate'])
@@ -57,7 +58,7 @@ const itemCls =
       </RouterLink>
       <RouterLink :to="{ name: 'characters', params: { id } }" :class="itemCls" @click="$emit('navigate')">
         <Icon icon="lucide:contact-round" class="size-5" />
-        Biodata tokoh
+        Deskripsi tokoh
       </RouterLink>
       <RouterLink :to="{ name: 'relations', params: { id } }" :class="itemCls" @click="$emit('navigate')">
         <Icon icon="lucide:git-fork" class="size-5" />
@@ -72,10 +73,13 @@ const itemCls =
 
     <div class="mt-auto space-y-4">
       <div class="flex items-center gap-3 rounded-xl bg-paper p-3">
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-semibold text-navy" :title="auth.user?.name">{{ auth.user?.name }}</p>
-          <p class="truncate text-xs text-muted" :title="auth.user?.email">{{ auth.user?.email }}</p>
-        </div>
+        <RouterLink :to="{ name: 'profile' }" class="flex min-w-0 flex-1 items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-lavender" title="Buka profil" @click="$emit('navigate')">
+          <UserAvatar :name="auth.user?.name" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-semibold text-navy" :title="auth.user?.name">{{ auth.user?.name }}</span>
+            <span class="block truncate text-xs text-muted" :title="auth.user?.email">{{ auth.user?.email }}</span>
+          </span>
+        </RouterLink>
         <button type="button" class="btn btn-outline btn-sm shrink-0" @click="keluar">
           <Icon icon="lucide:log-out" class="size-4" />
           Keluar

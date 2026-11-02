@@ -26,6 +26,8 @@ services:
       DATABASE_URL: mysql+pymysql://narative:${DB_PASSWORD:-narative}@db:3306/narative
       SECRET_KEY: ${SECRET_KEY:-narative-dev-secret-ganti-kalau-dipublikasikan-32-karakter}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      DOCUMENT_PARSER: ${DOCUMENT_PARSER:-auto}
       MODEL_DIR: /model
       MODEL_URL: ${MODEL_URL:-https://huggingface.co/Roena33/narative-model/resolve/main/model_best.pt}
       UPLOAD_DIR: /app/uploads
@@ -37,10 +39,14 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-NARAtive <no-reply@narative.local>}
+      ROUTER_BASE_URL: ${ROUTER_BASE_URL:-}
+      ROUTER_API_KEY: ${ROUTER_API_KEY:-}
+      ROUTER_MODEL: ${ROUTER_MODEL:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
       GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
       GEMINI_CHARACTER_MODEL: ${GEMINI_CHARACTER_MODEL:-}
+      CHARACTER_PARALLEL: ${CHARACTER_PARALLEL:-3}
     volumes:
       - ./model:/model
       - uploads:/app/uploads

@@ -31,6 +31,10 @@ def checkout(client, auth, user, **body):
     return client.post("/billing/checkout", json=body, headers=auth(user))
 
 
+def invoices(outbox):
+    return [m for m in outbox if m["subject"].startswith("Invoice")]
+
+
 def pay(client, auth, user, order_id):
     return client.post(f"/billing/transactions/{order_id}/simulate-pay", headers=auth(user))
 
@@ -238,7 +242,7 @@ class TestPaying:
         user = make_user("free")
         order = checkout(client, auth, user, bank="bni").json()
         pay(client, auth, user, order["order_id"])
-        [mail] = outbox
+        [mail] = invoices(outbox)
         assert mail["to"] == user.email and mail["subject"] == f"Invoice NARAtive {order['order_id']}"
         for fragment in (order["order_id"], "Paket Middle (30 hari)", "Rp 29.000", f"BNI {order['va_number']}", "Aktif sampai"):
             assert fragment in mail["body"]
@@ -246,7 +250,7 @@ class TestPaying:
     def test_the_invoice_for_extra_analyses_has_no_end_date(self, client, auth, make_user, outbox):
         user = make_user("free")
         pay(client, auth, user, checkout(client, auth, user, kind="pay_per_check", quantity=3).json()["order_id"])
-        body = outbox[0]["body"]
+        body = invoices(outbox)[0]["body"]
         assert "3 analisis tambahan (pay-per-check)" in body and "Rp 15.000" in body and "Aktif sampai" not in body
 
     def test_a_paid_order_cannot_be_paid_again(self, client, db, auth, make_user, outbox):
@@ -255,7 +259,7 @@ class TestPaying:
         pay(client, auth, user, order)
         res = pay(client, auth, user, order)
         assert res.status_code == 409 and res.json()["detail"] == "Pembayaran ini sudah tidak menunggu."
-        assert fresh_user(db, user).extra_checks == 2 and len(outbox) == 1
+        assert fresh_user(db, user).extra_checks == 2 and len(invoices(outbox)) == 1
 
     def test_settling_twice_in_the_service_applies_it_only_once(self, db, make_user, outbox):
         user = make_user("free")

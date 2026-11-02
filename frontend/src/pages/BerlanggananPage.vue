@@ -1,13 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
 import api, { errorMessage } from '@/lib/api'
 import { isLoggedIn, refreshUser } from '@/lib/auth'
-import { TX_STATUS, formatDate, rupiah, txItem } from '@/lib/content'
+import { formatDate, rupiah } from '@/lib/content'
 import CheckoutDialog from '@/components/CheckoutDialog.vue'
 import TierChip from '@/components/TierChip.vue'
 
-const route = useRoute()
 const plans = [
   {
     key: 'standard', tier: 'free', name: 'Standard', tag: 'Gratis', icon: 'lucide:user',
@@ -17,7 +15,7 @@ const plans = [
   {
     key: 'middle', tier: 'middle', name: 'Middle', tag: 'Menengah', icon: 'lucide:sparkles',
     limits: ['300 halaman per unggahan', '15 analisis per bulan', '50 e-book aktif'],
-    features: ['Semua fitur Standard', 'Rincian per dimensi dan alasan rating', 'Rangkuman cerita per bab', 'Biodata tokoh', 'Relasi antar tokoh'],
+    features: ['Semua fitur Standard', 'Rincian per dimensi dan alasan rating', 'Rangkuman cerita per bab', 'Deskripsi tokoh', 'Relasi antar tokoh'],
   },
   {
     key: 'high', tier: 'high', name: 'High', tag: 'Lengkap', popular: true, icon: 'lucide:crown',
@@ -71,10 +69,7 @@ function action(p) {
   return { label: RANK[p.tier] === RANK[paid.value] ? `Perpanjang ${p.name}` : `Pilih paket ${p.name}`, disabled: false }
 }
 
-onMounted(async () => {
-  await load()
-  if (route.hash === '#riwayat') document.getElementById('riwayat')?.scrollIntoView({ behavior: 'smooth' })
-})
+onMounted(load)
 </script>
 
 <template>
@@ -215,38 +210,18 @@ onMounted(async () => {
         <RouterLink v-else-if="!isLoggedIn()" :to="{ name: 'login', query: { next: '/berlangganan' } }" class="btn btn-primary btn-sm">Masuk untuk membeli</RouterLink>
       </article>
 
-      <article id="riwayat" class="card space-y-4 p-7">
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <span class="grid size-11 place-items-center rounded-xl bg-sand text-navy"><Icon icon="lucide:receipt" class="size-6" /></span>
+      <article class="card flex flex-wrap items-center justify-between gap-4 p-7">
+        <div class="flex items-center gap-3">
+          <span class="grid size-11 place-items-center rounded-xl bg-sand text-navy"><Icon icon="lucide:receipt" class="size-6" /></span>
+          <div>
             <h2 class="text-xl font-semibold">Riwayat pembayaran</h2>
+            <p class="text-sm text-muted">Lihat semua transaksi dan lanjutkan pembayaran di halaman profilmu.</p>
           </div>
+        </div>
+        <div class="flex items-center gap-3">
           <span v-if="pendingCount" class="chip bg-amber/35 text-navy">{{ pendingCount }} menunggu</span>
+          <RouterLink v-if="isLoggedIn()" :to="{ name: 'profile', hash: '#riwayat' }" class="btn btn-outline btn-sm">Buka riwayat</RouterLink>
         </div>
-
-        <div v-if="loading" class="flex items-center justify-center gap-2 py-6 text-muted">
-          <Icon icon="lucide:loader-circle" class="size-5 animate-spin" />
-          Memuat…
-        </div>
-        <div v-else-if="!isLoggedIn()" class="grid place-items-center gap-2 rounded-xl border border-dashed border-line px-4 py-6 text-center">
-          <Icon icon="lucide:log-in" class="size-7 text-lavender" />
-          <p class="text-sm text-muted">Masuk untuk melihat riwayat pembayaranmu.</p>
-        </div>
-        <div v-else-if="!transactions.length" class="grid place-items-center gap-2 rounded-xl border border-dashed border-line px-4 py-6 text-center">
-          <Icon icon="lucide:inbox" class="size-7 text-lavender" />
-          <p class="text-sm text-muted">Belum ada riwayat pembayaran. Riwayat upgrade dan pembelian analisis akan tampil di sini.</p>
-        </div>
-        <ul v-else class="divide-y divide-line">
-          <li v-for="t in transactions" :key="t.order_id" class="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-semibold text-navy">{{ txItem(t) }}</p>
-              <p class="text-xs text-muted">{{ formatDate(t.created_at) }} · {{ t.order_id }}</p>
-            </div>
-            <span class="text-sm font-semibold text-navy tabular-nums">{{ rupiah(t.amount) }}</span>
-            <span class="chip" :class="TX_STATUS[t.status].cls"><Icon :icon="TX_STATUS[t.status].icon" class="size-3" />{{ TX_STATUS[t.status].label }}</span>
-            <button v-if="t.status === 'pending'" type="button" class="btn btn-accent btn-sm" @click="checkout = { resume: t }">Lanjutkan bayar</button>
-          </li>
-        </ul>
       </article>
     </section>
 

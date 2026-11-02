@@ -13,7 +13,7 @@ def report(doc: Document) -> None:
         return
     print(f"  {len(doc.characters)} tokoh:")
     for c in doc.characters:
-        print(f"    {c.mention_count:>4}x  {c.name:<28} {c.role}")
+        print(f"    {c.mention_count:>4}x  {c.name:<28}")
     by_pair = defaultdict(lambda: defaultdict(int))
     for ch in doc.chapters:
         for r in ch.relations:
@@ -38,7 +38,7 @@ def main() -> None:
             return
         for doc in docs:
             try:
-                characters.extract(db, doc, ai="--ai" in sys.argv)
+                characters.extract(db, doc)
             except characters.CharacterError as e:
                 print(f"[{doc.id}] {doc.title[:40]}: gagal ({e})")
                 return

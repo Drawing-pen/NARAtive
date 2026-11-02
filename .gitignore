@@ -5,3 +5,6 @@ __pycache__/
 model/*.pt
 uploads/
 *.pt
+# naskah contoh untuk uji manual (hak cipta, jangan diunggah)
+backend/*.pdf
+backend/*.epub

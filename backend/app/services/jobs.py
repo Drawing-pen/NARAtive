@@ -10,7 +10,7 @@ from app.ml.analyzer import get_analyzer, summarize
 from app.core.security import has_tier
 from app.db.models import Document, User
 from app.services import heaviness
-from app.services import characters
+from app.services import character_ai, characters
 from app.services.summarizer import SummaryError, configured
 
 log = logging.getLogger("uvicorn.error")
@@ -49,7 +49,7 @@ def process(doc_id: int) -> None:
         doc.status, doc.analyzed_at = "done", datetime.utcnow()
         db.commit()
         owner = db.get(User, doc.user_id)
-        if owner is not None and has_tier(owner, "middle"):
+        if owner is not None and has_tier(owner, "middle") and character_ai.available():
             characters.run(doc_id)
     except Exception:
         log.exception("Analisis dokumen %s gagal", doc_id)

@@ -8,9 +8,11 @@ const router = createRouter({
     // Situs: Beranda, Koleksi, Berlangganan
     { path: '/', name: 'home', component: () => import('@/pages/HomePage.vue') },
     { path: '/koleksi', name: 'library', component: () => import('@/pages/KoleksiPage.vue'), meta: { requiresAuth: true } },
+    { path: '/profil', name: 'profile', component: () => import('@/pages/ProfilPage.vue'), meta: { requiresAuth: true } },
     { path: '/berlangganan', name: 'plans', component: () => import('@/pages/BerlanggananPage.vue') },
 
     { path: '/masuk', name: 'login', component: () => import('@/pages/AuthPage.vue'), props: { mode: 'masuk' }, meta: { bare: true, guest: true } },
+    { path: '/lupa-sandi', name: 'forgot', component: () => import('@/pages/AuthPage.vue'), props: { mode: 'lupa' }, meta: { bare: true, guest: true } },
     { path: '/daftar', name: 'register', component: () => import('@/pages/AuthPage.vue'), props: { mode: 'daftar' }, meta: { bare: true, guest: true } },
 
     // Ruang kerja satu buku

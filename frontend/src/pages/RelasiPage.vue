@@ -1,9 +1,9 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, nextTick } from 'vue'
 import api from '@/lib/api'
 import { hasTier } from '@/lib/auth'
 import TierLock from '@/components/TierLock.vue'
-import { RELATION_TYPES, ROLES, relationType } from '@/lib/content'
+import { RELATION_TYPES, relationType } from '@/lib/content'
 import { useCharacters } from '@/lib/characters'
 
 const props = defineProps({ id: { type: String, required: true } })
@@ -22,6 +22,10 @@ onMounted(async () => {
     chapters.value = []
   }
 })
+
+function centerScroll(el) {
+  if (el) nextTick(() => { el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2 })
+}
 
 const W = 760
 const H = 560
@@ -101,7 +105,6 @@ const nodes = computed(() => {
     return {
       id,
       name: c.name,
-      role: c.role,
       x,
       y,
       r,
@@ -184,7 +187,7 @@ const summaryLabel = computed(
           <h2 class="text-2xl font-semibold">Deteksi tokoh dan relasinya</h2>
           <p class="max-w-md text-sm text-muted">Peta relasi disusun dari tokoh yang terdeteksi di buku ini. Prosesnya berjalan di server dan bisa memakan waktu beberapa menit.</p>
         </div>
-        <button v-if="canCreate" class="btn btn-primary" :disabled="starting" @click="start(false)">
+        <button v-if="canCreate" class="btn btn-primary" :disabled="starting" @click="start()">
           <Icon :icon="starting ? 'lucide:loader-circle' : 'lucide:scan-search'" class="size-4.5" :class="{ 'animate-spin': starting }" />
           Deteksi tokoh
         </button>
@@ -202,9 +205,9 @@ const summaryLabel = computed(
         <Icon icon="lucide:circle-x" class="size-12 text-danger" />
         <div class="space-y-1">
           <h2 class="text-2xl font-semibold">Tokoh gagal dideteksi</h2>
-          <p class="max-w-md text-sm text-muted">Model pengenal nama belum terpasang di server atau tidak bisa diunduh. Coba lagi sebentar lagi.</p>
+          <p class="max-w-md text-sm text-muted">Layanan AI belum bisa dihubungi atau gagal membaca buku ini. Coba lagi sebentar lagi.</p>
         </div>
-        <button v-if="canCreate" class="btn btn-primary btn-sm" :disabled="starting" @click="start(false)">
+        <button v-if="canCreate" class="btn btn-primary btn-sm" :disabled="starting" @click="start()">
           <Icon icon="lucide:refresh-cw" class="size-4" />
           Coba lagi
         </button>
@@ -216,7 +219,7 @@ const summaryLabel = computed(
           <h2 class="text-2xl font-semibold">Tokoh belum cukup</h2>
           <p class="max-w-md text-sm text-muted">Peta relasi membutuhkan minimal dua tokoh yang terdeteksi.</p>
         </div>
-        <RouterLink :to="{ name: 'characters', params: { id } }" class="btn btn-quiet btn-sm">Lihat biodata tokoh</RouterLink>
+        <RouterLink :to="{ name: 'characters', params: { id } }" class="btn btn-quiet btn-sm">Lihat deskripsi tokoh</RouterLink>
       </section>
 
       <template v-else>
@@ -224,13 +227,16 @@ const summaryLabel = computed(
           <div class="flex flex-wrap items-end gap-3">
             <div class="min-w-0 flex-1 space-y-1.5">
               <label for="bab" class="text-sm font-semibold text-navy">Tinjau relasi pada</label>
-              <select
-                id="bab"
-                v-model.number="selected"
-                class="w-full rounded-lg border border-line bg-paper px-3 py-2.5 text-[15px] text-ink focus:border-lavender focus:bg-white focus:ring-2 focus:ring-lavender/30 focus:outline-none"
-              >
-                <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
-              </select>
+              <div class="relative">
+                <select
+                  id="bab"
+                  v-model.number="selected"
+                  class="w-full cursor-pointer appearance-none rounded-lg border border-line bg-paper py-2.5 pr-11 pl-3.5 text-[15px] text-ink focus:border-lavender focus:bg-white focus:ring-2 focus:ring-lavender/30 focus:outline-none"
+                >
+                  <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+                <Icon icon="lucide:chevron-down" class="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-muted" />
+              </div>
             </div>
             <div class="flex gap-2">
               <button class="btn btn-outline" :disabled="position <= 0" aria-label="Bab sebelumnya" @click="step(-1)">
@@ -259,7 +265,9 @@ const summaryLabel = computed(
 
         <template v-else>
           <section class="card p-3 sm:p-5">
-            <svg :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="summaryLabel" class="mx-auto h-auto w-full max-w-3xl">
+            <p class="mb-2 text-center text-xs text-muted sm:hidden">Geser ke samping untuk melihat seluruh graf.</p>
+            <div :ref="centerScroll" class="overflow-x-auto">
+            <svg :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="summaryLabel" class="mx-auto h-auto w-full max-w-3xl min-w-[640px]">
               <g>
                 <line
                   v-for="e in drawn"
@@ -289,7 +297,7 @@ const summaryLabel = computed(
                 @focus="active = n.id"
                 @blur="active = null"
               >
-                <circle :cx="n.x" :cy="n.y" :r="n.r" stroke-width="2.5" class="stroke-white" :class="ROLES[n.role]?.node" />
+                <circle :cx="n.x" :cy="n.y" :r="n.r" stroke-width="2.5" class="fill-navy stroke-white" />
                 <text
                   :x="n.lx"
                   :y="n.ly"
@@ -303,6 +311,7 @@ const summaryLabel = computed(
                 >{{ short(n.name) }}</text>
               </g>
             </svg>
+            </div>
           </section>
 
           <section class="space-y-3" aria-labelledby="daftar-relasi">
@@ -322,11 +331,11 @@ const summaryLabel = computed(
         <div class="flex flex-wrap items-center justify-between gap-3">
           <p class="flex items-start gap-2 text-xs text-muted sm:max-w-2xl">
             <Icon icon="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
-            Jenis hubungan diperkirakan dari kata-kata di paragraf tempat dua tokoh muncul bersama (misalnya “kekasih”, “sahabat”, “membenci”) dan nada paragrafnya, sehingga bisa keliru. Pasangan yang tidak punya petunjuk jelas ditandai Kenalan.
+            Hubungan dibaca AI dari isi cerita dan hanya ditampilkan bila ada kutipan yang mendukungnya, tetapi jenis hubungan tetap perkiraan sehingga bisa keliru.
           </p>
           <RouterLink :to="{ name: 'characters', params: { id } }" class="btn btn-quiet btn-sm">
             <Icon icon="lucide:contact-round" class="size-4" />
-            Biodata tokoh
+            Deskripsi tokoh
           </RouterLink>
         </div>
       </template>

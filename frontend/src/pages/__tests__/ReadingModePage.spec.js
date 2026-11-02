@@ -243,3 +243,91 @@ describe('keadaan halaman', () => {
     expect(w.findAll('nav button').at(-1).attributes('disabled')).toBeDefined()
   })
 })
+
+function md(idx, chapter_no, markdown, text, extra = {}) {
+  return { ...para(idx, chapter_no, text, extra), markdown, kind: extra.kind ?? 'p' }
+}
+
+describe('teks Markdown', () => {
+  const MARKDOWN_PARAGRAPHS = [
+    md(0, 1, 'Kata **penting** dan _miring_ di sini.', 'Kata penting dan miring di sini.'),
+    md(1, 1, '### Sub bagian', 'Sub bagian', { kind: 'h' }),
+    md(2, 1, '- butir pertama yang panjang', 'butir pertama yang panjang', { kind: 'li' }),
+    md(3, 1, '> kutipan yang cukup panjang', 'kutipan yang cukup panjang', { kind: 'quote' }),
+    para(4, 1, 'Paragraf lama tanpa markdown.'),
+  ]
+
+  it('menampilkan huruf tebal dan miring', async () => {
+    serve({ paragraphs: MARKDOWN_PARAGRAPHS })
+    const w = await open()
+    const first = w.find('article .md-block')
+    expect(first.find('strong').text()).toBe('penting')
+    expect(first.find('em').text()).toBe('miring')
+  })
+
+  it('menampilkan subjudul, daftar, dan kutipan', async () => {
+    serve({ paragraphs: MARKDOWN_PARAGRAPHS })
+    const w = await open()
+    expect(w.find('article h3').text()).toBe('Sub bagian')
+    expect(w.find('article ul li').text()).toBe('butir pertama yang panjang')
+    expect(w.find('article blockquote').text()).toBe('kutipan yang cukup panjang')
+  })
+
+  it('menampilkan paragraf lama tanpa markdown sebagai teks biasa', async () => {
+    serve({ paragraphs: MARKDOWN_PARAGRAPHS })
+    const w = await open()
+    const plain = w.findAll('article p.para').find((p) => p.text() === 'Paragraf lama tanpa markdown.')
+    expect(plain).toBeTruthy()
+    expect(plain.classes()).toContain('whitespace-pre-line')
+  })
+
+  it('memberi huruf kapital awal pada paragraf terlihat pertama yang berformat', async () => {
+    serve({ paragraphs: MARKDOWN_PARAGRAPHS })
+    const w = await open()
+    expect(w.find('article .md-block').classes()).toContain('drop-cap')
+  })
+
+  it('menampilkan HTML mentah dari isi buku sebagai teks', async () => {
+    serve({ paragraphs: [md(0, 1, '<script>alert(1)</script> halo dunia yang indah', '<script>alert(1)</script> halo dunia yang indah')] })
+    const w = await open()
+    expect(w.find('article script').exists()).toBe(false)
+    expect(bodyText(w)).toContain('<script>alert(1)</script>')
+  })
+
+  it('tidak menampilkan tautan dan gambar dari isi buku', async () => {
+    serve({ paragraphs: [md(0, 1, 'Buka [tautan](https://jahat.example) ![gambar](https://jahat.example/a.png) ya', 'Buka tautan ya')] })
+    const w = await open()
+    expect(w.find('article a').exists()).toBe(false)
+    expect(w.find('article img').exists()).toBe(false)
+    expect(w.html()).not.toContain('jahat.example')
+  })
+
+  describe('bersama Safe Mode', () => {
+    const SENSITIVE = [md(0, 1, 'Adegan **intim** yang panjang di sini.', 'Adegan intim yang panjang di sini.', { sexual: 0.9 })]
+
+    it('bayangan buram memakai teks polos, tanpa markdown', async () => {
+      serve({ paragraphs: SENSITIVE })
+      const w = await open()
+      const [hidden] = hiddenButtons(w)
+      expect(hidden.find('span[aria-hidden="true"]').text()).toBe('Adegan intim yang panjang di sini.')
+      expect(hidden.find('strong').exists()).toBe(false)
+    })
+
+    it('setelah dibuka, markdown ditampilkan terformat', async () => {
+      serve({ paragraphs: SENSITIVE })
+      const w = await open()
+      await hiddenButtons(w)[0].trigger('click')
+      expect(hiddenButtons(w)).toHaveLength(0)
+      expect(w.find('article strong').text()).toBe('intim')
+    })
+
+    it('bisa disamarkan kembali', async () => {
+      serve({ paragraphs: SENSITIVE })
+      const w = await open()
+      await hiddenButtons(w)[0].trigger('click')
+      await buttonByText(w, 'Samarkan lagi').trigger('click')
+      expect(hiddenButtons(w)).toHaveLength(1)
+      expect(w.find('article strong').exists()).toBe(false)
+    })
+  })
+})

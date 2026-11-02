@@ -31,11 +31,11 @@ export function useCharacters(getId) {
     }
   }
 
-  async function start(ai = false) {
+  async function start() {
     starting.value = true
     error.value = ''
     try {
-      const { data: next } = await api.post(`/documents/${getId()}/characters`, null, { params: { ai: ai === true } })
+      const { data: next } = await api.post(`/documents/${getId()}/characters`)
       data.value = next
     } catch (e) {
       error.value = errorMessage(e, 'Gagal memulai pendeteksian tokoh.')

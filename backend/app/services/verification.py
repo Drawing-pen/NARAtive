@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db.models import EmailVerification, User
-from app.services import mailer
+from app.services import email_templates, mailer
 
 CODE_TTL = timedelta(minutes=10)
 RESEND_COOLDOWN = timedelta(seconds=60)
@@ -55,12 +55,8 @@ def _issue(db: Session, pending: EmailVerification) -> None:
     pending.last_sent_at = now
     db.commit()
     minutes = int(CODE_TTL.total_seconds() // 60)
-    mailer.send(
-        pending.email,
-        "Kode verifikasi NARAtive",
-        f"Halo {pending.name},\n\nKode verifikasi NARAtive kamu: {code}\n"
-        f"Kode berlaku {minutes} menit. Jika bukan kamu yang mendaftar, abaikan email ini.\n\nSalam,\nNARAtive",
-    )
+    mail = email_templates.verification_email(pending.name, code, minutes)
+    mailer.send(pending.email, mail.subject, mail.text, mail.html)
 
 
 def start(db: Session, name: str, email: str, password: str) -> EmailVerification:

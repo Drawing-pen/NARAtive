@@ -272,8 +272,13 @@ def _big_lines(pdf) -> set[str]:
     return found if len(found) <= max(3, len(pdf)) else set()   # terlalu banyak = bukan judul bab
 
 
+def _open(path: str):
+    with open(path, "rb") as f:
+        return pymupdf.open(stream=f.read(), filetype="pdf")
+
+
 def read_pdf(path: str) -> tuple[int, list[str], list[tuple[int, str]]]:
-    with pymupdf.open(path) as pdf:
+    with _open(path) as pdf:
         page_count = len(pdf)
         drop = _running_edges(pdf)
         pages = [_page_text(page, drop) for page in pdf]
@@ -357,7 +362,7 @@ def split_chapters(text: str, min_chars: int = 20, extra: set[str] | None = None
 
 
 def count_pages(path: str) -> int:
-    with pymupdf.open(path) as pdf:
+    with _open(path) as pdf:
         return len(pdf)
 
 

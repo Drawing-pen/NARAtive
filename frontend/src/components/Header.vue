@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 import { auth, isLoggedIn, logout, tierKey } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
 import TierChip from '@/components/TierChip.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const router = useRouter()
 
@@ -30,7 +31,7 @@ const nav = [
             v-for="item in nav"
             :key="item.name"
             :to="{ name: item.name }"
-            class="relative px-1 py-2 text-[15px] font-semibold text-muted transition hover:text-navy after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:scale-x-0 after:bg-amber after:transition aria-[current=page]:text-navy aria-[current=page]:after:scale-x-100"
+            class="relative inline-flex min-h-10 items-center px-1 text-[15px] font-semibold text-muted transition hover:text-navy after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:scale-x-0 after:bg-amber after:transition aria-[current=page]:text-navy aria-[current=page]:after:scale-x-100"
           >
             {{ item.label }}
           </RouterLink>
@@ -40,7 +41,10 @@ const nav = [
       <div class="flex shrink-0 items-center gap-2">
         <template v-if="isLoggedIn()">
           <TierChip :tier="tierKey()" class="hidden lg:inline-flex" />
-          <span class="hidden max-w-40 truncate text-sm font-semibold text-navy sm:inline" :title="auth.user?.email">{{ auth.user?.name }}</span>
+          <RouterLink :to="{ name: 'profile' }" class="group flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-lavender" :title="`Profil · ${auth.user?.email}`" aria-label="Buka profil">
+            <UserAvatar :name="auth.user?.name" size="sm" />
+            <span class="hidden max-w-40 truncate text-sm font-semibold text-navy group-hover:underline sm:inline">{{ auth.user?.name }}</span>
+          </RouterLink>
           <button type="button" class="btn btn-outline btn-sm" @click="keluar">
             <Icon icon="lucide:log-out" class="size-4" />
             Keluar

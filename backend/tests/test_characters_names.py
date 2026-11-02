@@ -1,130 +1,155 @@
-from collections import Counter
-
 import pytest
 
-from app.services import characters
+from app.services import character_ai, characters
+from tests.characters_helpers import build, by_name, para, person, repeat
 
 
-@pytest.mark.parametrize(
-    "raw, expected",
-    [
-        ("Rana", "Rana"),
-        ("Dede Dering", "Dede Dering"),
-        ("  Rana  ", "Rana"),
-        ('"Rana"', "Rana"),
-        ("(Rana)", "Rana"),
-        ("Rana's", "Rana"),
-        ("Rana’s", "Rana"),
-        ("Rana.", "Rana"),
-        ("Rana   Afifah", "Rana Afifah"),
-        ("I Wayan", "Wayan"),
-        ("Ludwig van Beethoven", "Ludwig van Beethoven"),
-        ("Siti binti Ahmad", "Siti binti Ahmad"),
-    ],
-)
-def test_clean_surface_accepts_and_tidies_names(raw, expected):
-    assert characters.clean_surface(raw) == expected
+class TestNameLike:
+    @pytest.mark.parametrize("alias", ["Raib", "Nak Seli", "Miss Selena", "Dede", "Mr. Budi", "李明", "ひろし"])
+    def test_names_are_recognised(self, alias):
+        assert characters.name_like(alias) is True
+
+    @pytest.mark.parametrize("alias", ["", " ", "kawan", "sang Pengintai", "the king", "my lord", "x", "李"])
+    def test_other_words_are_not(self, alias):
+        assert characters.name_like(alias) is False
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [
-        "rana",
-        "R",
-        "",
-        "Rana2",
-        "Apollo 13",
-        "Anna Bella Cinta Dewi Eka",
-        "Dede dan Rana",
-        "Rana pergi ke pasar",
-        "1234",
-        "...",
-    ],
-)
-def test_clean_surface_rejects_things_that_are_not_names(raw):
-    assert characters.clean_surface(raw) is None
+class TestStripQuotes:
+    def test_curly_quotes_are_removed_with_their_content(self):
+        assert characters.strip_quotes("Aku pergi. “Aku tidak mau,” katanya.") == "Aku pergi.  katanya."
+
+    def test_the_indonesian_style_where_one_mark_opens_and_closes(self):
+        assert characters.strip_quotes("”Aku lapar,” kata Ali, ”kamu?” Aku diam.") == " kata Ali,  Aku diam."
+
+    def test_straight_and_guillemet_quotes(self):
+        assert characters.strip_quotes('I said "I am here" and «je suis là» too.') == "I said  and  too."
+
+    def test_an_unclosed_quote_removes_nothing(self):
+        assert characters.strip_quotes("Aku bilang ”halo dan pergi") == "Aku bilang ”halo dan pergi"
+
+    def test_a_quote_longer_than_the_limit_is_not_removed(self):
+        text = "”" + "a" * 600 + "”"
+        assert characters.strip_quotes(text) == text
 
 
-def test_clean_surface_keeps_the_longest_piece_around_quotes():
-    assert characters.clean_surface('"Rana Afifah" (X)') == "Rana Afifah"
+class TestCounting:
+    def test_aliases_add_to_the_main_name(self):
+        result = build(repeat("Raib dan Ra bermain.", 2), [person("Raib", ["Ra"])])
+        assert by_name(result)["Raib"].count == 4
+
+    def test_the_longest_alias_wins_so_a_phrase_is_counted_once(self):
+        result = build(repeat("Putri Raib datang.", 3), [person("Raib", ["Putri Raib"])])
+        assert by_name(result)["Raib"].count == 3
+
+    def test_only_whole_words_count(self):
+        result = build(repeat("Alina bertemu Ali di Alicante.", 3), [person("Ali")])
+        assert by_name(result)["Ali"].count == 3
+
+    def test_matching_is_case_sensitive(self):
+        result = build(repeat("Ali dan ali dan ALI.", 3), [person("Ali")])
+        assert by_name(result)["Ali"].count == 3
+
+    def test_a_name_needs_three_mentions(self):
+        result = build(repeat("Rana pulang.", 3) + repeat("Dede menunggu.", 2), [person("Rana"), person("Dede")])
+        assert list(by_name(result)) == ["Rana"]
+
+    def test_characters_are_ordered_by_mentions_and_capped_at_25(self):
+        texts = [para(f"Tokoh{chr(65 + i)}{chr(97 + i)} lewat.") for i in range(30) for _ in range(40 - i)]
+        people = [person(f"Tokoh{chr(65 + i)}{chr(97 + i)}") for i in range(30)]
+        result = build(texts, people)
+        counts = [c.count for c in result.characters]
+        assert len(counts) == 25 and counts == sorted(counts, reverse=True) and counts[0] == 40
+
+    def test_a_generic_word_given_as_a_nickname_is_not_counted(self):
+        paragraphs = repeat("Ali datang.", 3) + repeat("Seorang kawan datang, kawan baik, kawan lama.", 2) + [para("Kawan, ayo.")]
+        result = build(paragraphs, [person("Ali", ["Kawan"])])
+        assert by_name(result)["Ali"].count == 3
+
+    def test_a_capitalised_nickname_that_is_not_a_common_word_is_counted(self):
+        result = build(repeat("Ali dan Bintang pergi.", 3), [person("Ali", ["Bintang"])])
+        assert by_name(result)["Ali"].count == 6
+
+    def test_the_main_name_is_always_counted_even_if_it_looks_generic(self):
+        paragraphs = repeat("Papa pulang.", 3) + repeat("papa dan papa", 5)
+        assert by_name(build(paragraphs, [person("Papa")]))["Papa"].count == 3
+
+    def test_a_lowercase_nickname_is_not_counted(self):
+        result = build(repeat("Raib bertemu sang Pengintai.", 3), [person("Raib", ["sang Pengintai"])])
+        assert by_name(result)["Raib"].count == 3
+
+    def test_a_nickname_shared_by_two_people_is_counted_for_neither(self):
+        paragraphs = repeat("Rana dan Dede bertemu Sel.", 3)
+        result = build(paragraphs, [person("Rana", ["Sel"]), person("Dede", ["Sel"])])
+        assert by_name(result)["Rana"].count == 3 and by_name(result)["Dede"].count == 3
+
+    def test_a_person_listed_under_another_persons_nickname_is_that_person(self):
+        paragraphs = repeat("Sel dan Rana bertemu.", 3)
+        result = build(paragraphs, [person("Sel"), person("Rana", ["Sel"])])
+        assert list(by_name(result)) == ["Rana"] and by_name(result)["Rana"].count == 6
+
+    def test_mentions_in_caseless_scripts_are_counted(self):
+        result = build(repeat("李明回家了。", 3), [person("李明")])
+        assert by_name(result)["李明"].count == 3
+
+    def test_the_chapters_where_a_character_appears_are_remembered(self):
+        paragraphs = repeat("Rana pulang.", 2, chapter=1) + repeat("Rana pergi.", 2, chapter=3)
+        assert by_name(build(paragraphs, [person("Rana")]))["Rana"].chapters == {1, 3}
 
 
-@pytest.mark.parametrize(
-    "surface, expected",
-    [
-        ("Rana", ("rana",)),
-        ("Rana Afifah", ("rana", "afifah")),
-        ("Dr. Budi", ("budi",)),
-        ("Mr Smith", ("smith",)),
-        ("Prof Dr Budi", ("budi",)),
-        ("Pak Budi", ("budi",)),
-        ("Pak", None),
-        ("Dr.", None),
-    ],
-)
-def test_canonical_drops_titles_and_case(surface, expected):
-    assert characters.canonical(surface) == expected
+class TestNarrator:
+    NARRATION = "Aku berjalan pulang bersama Ali. Aku lelah."
 
+    def test_first_person_pronouns_count_for_the_narrator(self):
+        result = build(repeat(self.NARRATION, 3), [person("Raib"), person("Ali")], narrator="Raib", pronouns=["aku"])
+        assert by_name(result)["Raib"].count == 6 and by_name(result)["Ali"].count == 3
 
-def entity(text, name, score=0.99, group="PER", key="entity_group"):
-    start = text.index(name)
-    return {key: group, "score": score, "start": start, "end": start + len(name), "word": name}
+    def test_pronouns_inside_dialogue_do_not_count(self):
+        paragraphs = repeat("”Aku lapar,” kata Ali. Aku diam saja.", 3)
+        result = build(paragraphs, [person("Raib"), person("Ali")], narrator="Raib", pronouns=["aku"])
+        assert by_name(result)["Raib"].count == 3
 
+    def test_any_language_works(self):
+        paragraphs = repeat('I walked home with Tom. "I am tired," Tom said.', 3)
+        result = build(paragraphs, [person("Amy"), person("Tom")], narrator="Amy", pronouns=["I"])
+        assert by_name(result)["Amy"].count == 3
 
-def test_surfaces_come_from_character_offsets():
-    text = "Kemarin Rana bertemu Dede di pasar."
-    found = characters.surfaces_from([entity(text, "Rana"), entity(text, "Dede")], text)
-    assert found == ["Rana", "Dede"]
+    def test_pronouns_are_whole_words_and_case_insensitive(self):
+        paragraphs = repeat("Aku pergi. Akulah yang pulang. aku diam. Makuku.", 3)
+        result = build(paragraphs, [person("Raib")], narrator="Raib", pronouns=["aku"])
+        assert by_name(result)["Raib"].count == 6
 
+    def test_a_pronoun_listed_as_a_nickname_is_not_counted_twice(self):
+        paragraphs = repeat("Aku pulang. ”Aku lapar,” kata Ali.", 3)
+        result = build(paragraphs, [person("Raib", ["Aku", "Ra"]), person("Ali")], narrator="Raib", pronouns=["aku"])
+        assert by_name(result)["Raib"].count == 3 and "Aku" not in by_name(result)["Raib"].aliases
 
-def test_only_person_entities_are_kept():
-    text = "Rana pergi ke Jakarta."
-    found = characters.surfaces_from([entity(text, "Rana"), entity(text, "Jakarta", group="LOC")], text)
-    assert found == ["Rana"]
+    def test_a_person_whose_name_is_a_pronoun_is_ignored(self):
+        result = build(repeat("Aku pulang bersama Ali.", 3), [person("Aku"), person("Ali")], narrator="", pronouns=["aku"])
+        assert list(by_name(result)) == ["Ali"]
 
+    def test_the_narrators_name_is_counted_too(self):
+        result = build(repeat("Raib berjalan. Aku lelah.", 3), [person("Raib")], narrator="Raib", pronouns=["aku"])
+        assert by_name(result)["Raib"].count == 6
 
-@pytest.mark.parametrize("group", ["PER", "PERSON", "PERS", "per"])
-def test_person_group_spellings_are_accepted(group):
-    text = "Rana pergi."
-    assert characters.surfaces_from([entity(text, "Rana", group=group)], text) == ["Rana"]
+    def test_only_the_chapters_of_the_narrated_chunk_count(self):
+        paragraphs = repeat("Aku pulang.", 3, chapter=1) + repeat("Aku pergi.", 3, chapter=2)
+        chunks = character_ai.make_chunks(paragraphs, limit=40)
+        assert [c.chapters for c in chunks] == [[1], [2]]
+        results = [
+            {"pov": "pertama", "narrator": "Raib", "pronouns": ["aku"], "people": [person("Raib")], "relations": []},
+            {"pov": "ketiga", "narrator": "", "pronouns": [], "people": [person("Raib")], "relations": []},
+        ]
+        result = characters.build(paragraphs, chunks, results, merge_fn=lambda entries: None)
+        assert by_name(result)["Raib"].count == 3
 
+    def test_a_narrator_missing_from_the_people_list_still_gets_a_card(self):
+        result = build(repeat("Aku pulang.", 3), [person("Ali")], narrator="Raib", pronouns=["aku"])
+        assert by_name(result)["Raib"].count == 3
 
-def test_token_style_labels_are_accepted():
-    text = "Rana pergi."
-    assert characters.surfaces_from([entity(text, "Rana", group="B-PER", key="entity")], text) == ["Rana"]
+    def test_an_unnamed_narrator_gets_no_card(self):
+        result = build(repeat("Aku pulang bersama Ali.", 3), [person("Ali")], narrator="", pronouns=["aku"])
+        assert list(by_name(result)) == ["Ali"]
 
-
-def test_the_confidence_threshold_is_0_85_inclusive():
-    text = "Rana dan Dede."
-    entities = [entity(text, "Rana", score=0.85), entity(text, "Dede", score=0.8499)]
-    assert characters.surfaces_from(entities, text) == ["Rana"]
-
-
-def test_entities_that_do_not_clean_into_names_are_dropped():
-    text = "kemarin rana pergi."
-    assert characters.surfaces_from([entity(text, "rana")], text) == []
-
-
-def test_a_short_name_that_is_part_of_one_longer_name_is_merged():
-    counts = Counter({("rana",): 3, ("rana", "afifah"): 5})
-    root = characters.unify(counts)
-    assert root[("rana",)] == ("rana", "afifah")
-    assert root[("rana", "afifah")] == ("rana", "afifah")
-
-
-def test_an_ambiguous_short_name_stays_separate_when_the_candidates_are_close():
-    counts = Counter({("rana",): 3, ("rana", "afifah"): 5, ("rana", "dzikro"): 4})
-    root = characters.unify(counts)
-    assert root[("rana",)] == ("rana",)
-
-
-def test_an_ambiguous_short_name_goes_to_a_candidate_twice_as_frequent():
-    counts = Counter({("rana",): 3, ("rana", "afifah"): 8, ("rana", "dzikro"): 4})
-    root = characters.unify(counts)
-    assert root[("rana",)] == ("rana", "afifah")
-
-
-def test_unrelated_names_never_merge():
-    counts = Counter({("rana",): 3, ("dede", "dering"): 5})
-    root = characters.unify(counts)
-    assert root[("rana",)] == ("rana",)
+    def test_the_narrator_is_resolved_through_nicknames(self):
+        result = build(repeat("Aku pulang.", 3), [person("Raib", ["Ra"])], narrator="Ra", pronouns=["aku"])
+        assert list(by_name(result)) == ["Raib"] and by_name(result)["Raib"].count == 3

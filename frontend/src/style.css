@@ -47,7 +47,12 @@
     @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-sm {
-    @apply px-3 py-1.5 text-[13px];
+    @apply min-h-9 px-3 py-1.5 text-[13px];
+  }
+  @media (pointer: coarse) {
+    .btn-sm {
+      min-height: 2.5rem;
+    }
   }
   .btn-primary {
     @apply bg-navy text-white shadow-sm hover:bg-navy-deep;
@@ -86,6 +91,53 @@
 .para {
   content-visibility: auto;
   contain-intrinsic-size: auto 7rem;
+}
+.md-block > * + * {
+  margin-top: 1.25rem;
+}
+.md-block h3,
+.md-block h4,
+.md-block h5,
+.md-block h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-navy);
+}
+.md-block h3 {
+  font-size: 1.3em;
+}
+.md-block h4 {
+  font-size: 1.15em;
+}
+.md-block ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.md-block ol {
+  list-style: decimal;
+  padding-left: 1.7em;
+}
+.md-block blockquote {
+  border-left: 3px solid var(--color-amber);
+  padding-left: 1em;
+  color: var(--color-muted);
+  font-style: italic;
+}
+.md-block strong {
+  font-weight: 700;
+}
+.md-block em {
+  font-style: italic;
+}
+.md-block.drop-cap > p:first-child::first-letter {
+  float: left;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 3.4em;
+  line-height: 0.82;
+  padding: 0.08em 0.12em 0 0;
+  color: var(--color-navy);
 }
 .drop-cap::first-letter {
   float: left;

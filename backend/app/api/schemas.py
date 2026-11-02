@@ -27,6 +27,23 @@ class RegisterIn(BaseModel):
         return v
 
 
+class ProfileUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    _clean_name = field_validator("name")(RegisterIn._clean_name.__func__)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=8, max_length=72)
+
+    _password_bytes = field_validator("new_password")(RegisterIn._password_bytes.__func__)
+
+
+class AccountDelete(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
 class VerifyIn(BaseModel):
     email: EmailStr
     code: str = Field(pattern=r"^\d{6}$")
@@ -34,6 +51,14 @@ class VerifyIn(BaseModel):
 
 class ResendIn(BaseModel):
     email: EmailStr
+
+
+class ResetIn(BaseModel):
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
+    new_password: str = Field(min_length=8, max_length=72)
+
+    _password_bytes = field_validator("new_password")(RegisterIn._password_bytes.__func__)
 
 
 class RegistrationStarted(BaseModel):
@@ -53,6 +78,7 @@ class UserOut(BaseModel):
     email: str
     tier: str = Field(validation_alias="access_tier")
     role: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -197,6 +223,8 @@ class ParagraphOut(BaseModel):
     idx: int
     chapter_no: int
     text: str
+    markdown: str | None = None
+    kind: str = "p"
     profanity: float | None
     sexual: float | None
     violence: float | None
@@ -208,15 +236,9 @@ class ParagraphOut(BaseModel):
 class CharacterOut(BaseModel):
     id: int
     name: str
-    role: str
     biodata: str | None
     mention_count: int
     aliases: str | None = None
-    gender: str | None = None
-    age: str | None = None
-    occupation: str | None = None
-    personality: str | None = None
-    background: str | None = None
     has_photo: bool = False
 
     model_config = {"from_attributes": True}

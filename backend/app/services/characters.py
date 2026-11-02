@@ -8,47 +8,25 @@ from itertools import combinations
 from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.db.database import SessionLocal
 from app.db.models import Character, CharacterRelation, Document
-from app.services import character_ai, character_rules, images
+from app.services import character_ai, images
 
 log = logging.getLogger("narative.characters")
 
-MIN_SCORE = 0.85
 MIN_MENTIONS = 3
 MAX_CHARACTERS = 25
+MAX_MERGE_ENTRIES = 60
+MAX_ALIASES_SHOWN = 3
+MAX_ROLES_SENT = 2
 MIN_PAIR_WEIGHT = 2
-CONFLICT_SHARE = 0.4
-CONFLICT_EMOTION_PROB = 0.6
-CONFLICT_VIOLENCE = 0.5
-CONFLICT_PROFANITY = 0.5
-MAX_NAME_TOKENS = 4
-MAX_TEXT_CHARS = 1500
-BATCH_SIZE = 16
-LEAD_RANK = 2
-LEAD_RATIO = 0.5
-SUPPORT_RATIO = 0.05
-COMMON_WORD_GUARD = 15
-MIN_CANDIDATE_MENTIONS = 2
-AI_CANDIDATES = 12
-SNIPPET_SEXUAL_MAX = 0.2
-AI_SNIPPETS, AI_WIDTH = 3, 200
+MIN_EVIDENCE_CHARS = 8
+QUOTE_SPAN = 500
+RELATION_PRIORITY = ("pasangan", "keluarga", "sahabat", "musuh", "teman", "kenalan")
 
-PERSON_GROUPS = {"PER", "PERSON", "PERS"}
-
-TITLES = {
-    "mr", "mrs", "ms", "miss", "mister", "madam", "madame", "dr", "prof", "sir", "lord", "lady", "earl", "duke",
-    "duchess", "count", "countess", "baron", "baroness", "king", "queen", "prince", "princess", "captain",
-    "pak", "bapak", "bu", "ibu", "kak", "mas", "mbak", "om", "tante", "nona", "tuan", "nyonya", "raja", "ratu",
-    "pangeran", "putri", "kapten", "bang", "abang", "dik", "adik",
-}
-
-PARTICLES = {"de", "da", "del", "della", "di", "van", "von", "der", "den", "bin", "binti", "bint", "al", "el", "la", "le", "du", "dos", "das", "ibn"}
-
-INTERJECTIONS = {"jeez", "crap", "jesus", "christ", "gosh", "damn", "goddamn", "dammit", "omg"}
-
-EMOTION_ID = {"sad": "sedih", "angry": "marah", "fear": "takut", "happy": "senang"}
+_QUOTED = re.compile(rf"[“”\"«][^“”\"«»]{{0,{QUOTE_SPAN}}}[”\"»]")
+_WORD = re.compile(r"\w+")
+_EVIDENCE_EDGES = " .,;:!?\"'“”‘’«»…-—"
 
 
 class CharacterError(Exception):
@@ -57,357 +35,290 @@ class CharacterError(Exception):
 
 @dataclass
 class CharInfo:
-    key: tuple
+    key: int
     name: str
     count: int
-    role: str = ""
     biodata: str = ""
     chapters: set = field(default_factory=set)
-    emotions: Counter = field(default_factory=Counter)
     aliases: list = field(default_factory=list)
-    profile: dict = field(default_factory=dict)
 
 
 @dataclass
 class Result:
     characters: list
     relations: list
+    complete: bool = True
 
 
-_ner = None
+@dataclass
+class _Group:
+    primary: str
+    aliases: list = field(default_factory=list)
+    roles: list = field(default_factory=list)
+    narrations: list = field(default_factory=list)
+    description: str = ""
+
+    def names(self) -> list[str]:
+        return [self.primary, *self.aliases]
+
+
 _lock = threading.Lock()
 
 
-def _load_ner():
-    global _ner
-    if _ner is None:
-        try:
-            import torch
-            from transformers import pipeline
-
-            device = 0 if torch.cuda.is_available() else -1
-            _ner = pipeline(
-                "token-classification", model=settings.ner_model, aggregation_strategy="simple", device=device
-            )
-        except Exception as e:
-            raise CharacterError(f"Model NER '{settings.ner_model}' tidak dapat dimuat: {e}")
-    return _ner
+def _cased(text: str) -> bool:
+    return any(c.isupper() or c.islower() for c in text)
 
 
-def detect(texts: list[str]) -> list[list[dict]]:
-    if not texts:
-        return []
-    ner = _load_ner()
-    return ner([t[:MAX_TEXT_CHARS] for t in texts], batch_size=BATCH_SIZE)
+def name_like(alias: str) -> bool:
+    alias = alias.strip()
+    if len(alias) < 2:
+        return False
+    return alias[0].isupper() if _cased(alias) else True
 
 
-def clean_surface(raw: str) -> str | None:
-    chunks = re.split(r"[\"“”()\[\]{}…,;:!?]+", raw)
-    s = max(chunks, key=lambda c: sum(ch.isalpha() for ch in c)).strip()
-    s = re.sub(r"^I\.?\s+", "", s)
-    s = re.sub(r"[’']s$", "", s)
-    s = s.strip(" \t\r\n\"'“”‘’.,;:!?()[]{}-—–_")
-    s = re.sub(r"\s+", " ", s)
-    if len(s) < 2 or any(ch.isdigit() for ch in s) or not s[0].isalpha() or not s[0].isupper():
-        return None
-    tokens = s.split(" ")
-    if len(tokens) > MAX_NAME_TOKENS:
-        return None
-    if any(t[0].islower() and t not in PARTICLES for t in tokens[1:]):
-        return None
-    return s
+def strip_quotes(text: str) -> str:
+    return _QUOTED.sub("", text)
 
 
-def canonical(surface: str) -> tuple | None:
-    tokens = [t.rstrip(".").casefold() for t in surface.split(" ")]
-    while tokens and tokens[0] in TITLES:
-        tokens.pop(0)
-    tokens = [t for t in tokens if t]
-    return tuple(tokens) if tokens else None
+def _pattern(word: str) -> str:
+    escaped = re.escape(word)
+    return rf"(?<!\w){escaped}(?!\w)" if _cased(word) else escaped
 
 
-def surfaces_from(entities: list[dict], text: str) -> list[str]:
-    out = []
-    for e in entities:
-        group = str(e.get("entity_group") or e.get("entity") or "").upper().replace("B-", "").replace("I-", "")
-        if group not in PERSON_GROUPS or float(e.get("score", 0.0)) < MIN_SCORE:
+def _normalize(text: str) -> str:
+    return " ".join(text.split()).casefold().strip(_EVIDENCE_EDGES)
+
+
+def _merge_into(target: _Group, other: _Group) -> None:
+    known = {n.casefold() for n in target.names()}
+    for name in other.names():
+        if name.casefold() not in known:
+            known.add(name.casefold())
+            target.aliases.append(name)
+    target.roles.extend(r for r in other.roles if r not in target.roles)
+    target.narrations.extend(other.narrations)
+
+
+def _find(groups: dict[str, _Group], name: str) -> _Group | None:
+    key = name.casefold()
+    if key in groups:
+        return groups[key]
+    return next((g for g in groups.values() if any(a.casefold() == key for a in g.aliases)), None)
+
+
+def _candidates(chunks: list, results: list) -> list[_Group]:
+    groups: dict[str, _Group] = {}
+    for chunk, result in zip(chunks, results):
+        if result is None:
             continue
-        surface = clean_surface(text[int(e["start"]):int(e["end"])])
-        if surface:
-            out.append(surface)
-    return out
-
-
-def unify(counts: Counter) -> dict:
-    keys = sorted(counts, key=lambda k: (-len(k), -counts[k]))
-    root: dict = {}
-    for k in keys:
-        longer = {root[c] for c in keys if c in root and len(c) > len(k) and set(k) <= set(c)}
-        if len(longer) == 1:
-            root[k] = next(iter(longer))
-        elif len(longer) > 1:
-            ranked = sorted(longer, key=lambda c: -counts[c])
-            root[k] = ranked[0] if counts[ranked[0]] >= 2 * counts[ranked[1]] else k
-        else:
-            root[k] = k
-    return root
-
-
-def _is_conflict(p: dict) -> bool:
-    return (
-        (p.get("emotion") == "angry" and (p.get("emotion_score") or 0.0) >= CONFLICT_EMOTION_PROB)
-        or (p.get("violence") or 0.0) >= CONFLICT_VIOLENCE
-        or (p.get("profanity") or 0.0) >= CONFLICT_PROFANITY
-    )
-
-
-def _role(rank: int, ratio: float) -> str:
-    if rank < LEAD_RANK or ratio >= LEAD_RATIO:
-        return "Tokoh utama"
-    if ratio >= SUPPORT_RATIO:
-        return "Tokoh pendukung"
-    return "Tokoh figuran"
-
-
-def _snippets(paragraphs: list[dict], locs: list[tuple], limit: int, width: int) -> list[str]:
-    seen: dict = {}
-    for i, surface in locs:
-        if i not in seen and (paragraphs[i].get("sexual") or 0.0) < SNIPPET_SEXUAL_MAX:
-            seen[i] = surface
-    usable = sorted(seen.items())
-    if not usable:
-        return []
-    step = len(usable) / limit if len(usable) > limit else 1
-    out = []
-    for j in range(min(limit, len(usable))):
-        i, surface = usable[int(j * step)]
-        text = paragraphs[i]["text"]
-        start = max(0, max(text.find(surface), 0) - width // 2)
-        out.append(("..." if start else "") + " ".join(text[start:start + width].split()))
-    return out
-
-
-def build(paragraphs: list[dict], mentions: list[list[str]], ai_fn=None) -> Result:
-    key_counts: Counter = Counter()
-    surface_counts: dict = defaultdict(Counter)
-    locations: dict = defaultdict(list)
-    para_keys: list[list[tuple]] = []
-    for i, names in enumerate(mentions):
-        keys = []
-        for surface in names:
-            k = canonical(surface)
-            if k is None:
+        pronouns = {p.casefold() for p in result["pronouns"]}
+        for person in result["people"]:
+            if person["name"].casefold() in pronouns:
                 continue
-            key_counts[k] += 1
-            surface_counts[k][surface] += 1
-            locations[k].append((i, surface))
-            keys.append(k)
-        para_keys.append(keys)
+            aliases = [a for a in person["aliases"] if a.casefold() not in pronouns]
+            group = groups.setdefault(person["name"].casefold(), _Group(person["name"]))
+            _merge_into(group, _Group(person["name"], aliases, [person["role"]] if person["role"] else []))
+        if result["narrator"] and result["pronouns"]:
+            group = _find(groups, result["narrator"]) or groups.setdefault(result["narrator"].casefold(), _Group(result["narrator"]))
+            group.narrations.append((frozenset(chunk.chapters), list(result["pronouns"])))
+    return _dedupe(list(groups.values()))
 
-    root = unify(key_counts)
-    totals: Counter = Counter()
-    for k, n in key_counts.items():
-        totals[root[k]] += n
-    for k in [k for k in totals if any(t in INTERJECTIONS for t in k)]:
-        del totals[k]
 
-    common = {k for k in totals if len(k) == 1 and totals[k] < COMMON_WORD_GUARD}
-    if common:
-        lowered: Counter = Counter()
-        for p in paragraphs:
-            for w in re.findall(r"[^\W\d_]+", p.get("text", "")):
-                if w.islower() and (w,) in common:
-                    lowered[(w,)] += 1
-        for k in common:
-            if lowered[k] >= MIN_MENTIONS and lowered[k] >= totals[k]:
-                del totals[k]
+def _dedupe(groups: list[_Group]) -> list[_Group]:
+    parent = list(range(len(groups)))
 
-    def members(k):
-        return [m for m, r in root.items() if r == k]
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
 
-    def locs_of(k):
-        return [loc for m in members(k) for loc in locations[m]]
+    for i, a in enumerate(groups):
+        for j, b in enumerate(groups):
+            if i != j and a.primary.casefold() in {n.casefold() for n in b.aliases}:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[ri] = rj
+    merged: dict[int, _Group] = {}
+    for i, group in enumerate(groups):
+        root = find(i)
+        if root not in merged:
+            merged[root] = _Group(groups[root].primary)
+            _merge_into(merged[root], groups[root])
+        if i != root:
+            _merge_into(merged[root], group)
+    return list(merged.values())
 
-    para_sets = [{root[k] for k in keys} for keys in para_keys]
-    pool = [k for k, n in totals.items() if n >= MIN_CANDIDATE_MENTIONS]
-    for a in sorted(pool, key=lambda k: totals[k]):
-        if a not in totals:
+
+def _alias_table(groups: list[_Group], texts: list[str]) -> dict[str, int]:
+    words = Counter(_WORD.findall("\n".join(texts)))
+    table = {g.primary: i for i, g in enumerate(groups)}
+    owners: dict[str, set] = defaultdict(set)
+    for i, group in enumerate(groups):
+        for alias in group.aliases:
+            if alias in table or not name_like(alias):
+                continue
+            lowered = alias.lower()
+            if _WORD.fullmatch(alias) and lowered != alias and words[lowered] >= words[alias]:
+                continue
+            owners[alias].add(i)
+    table.update({alias: next(iter(o)) for alias, o in owners.items() if len(o) == 1})
+    return table
+
+
+def _mentions(texts: list[str], chapters: list[int], groups: list[_Group]):
+    table = _alias_table(groups, texts)
+    rx = re.compile("(?:" + "|".join(_pattern(k) for k in sorted(table, key=len, reverse=True)) + ")") if table else None
+    counts: list[Counter] = [Counter() for _ in texts]
+    alias_counts: Counter = Counter()
+    if rx:
+        for i, text in enumerate(texts):
+            for match in rx.finditer(text):
+                counts[i][table[match.group(0)]] += 1
+                alias_counts[(table[match.group(0)], match.group(0))] += 1
+    narrated: dict[int, set] = defaultdict(set)
+    for g, group in enumerate(groups):
+        for narrated_chapters, pronouns in group.narrations:
+            narrated[g] |= narrated_chapters
+            prx = re.compile("(?:" + "|".join(_pattern(p) for p in sorted(pronouns, key=len, reverse=True)) + ")", re.IGNORECASE)
+            for i, text in enumerate(texts):
+                if chapters[i] in narrated_chapters:
+                    counts[i][g] += len(prx.findall(strip_quotes(text)))
+    return counts, alias_counts, narrated
+
+
+def _apply_merge(entry_groups: list[_Group], answer: list[dict]) -> list[_Group]:
+    used: set[int] = set()
+    out: list[_Group] = []
+    for item in answer:
+        ids = sorted(i for i in item["ids"] if 0 <= i < len(entry_groups) and i not in used)
+        if not ids:
             continue
-        targets = [
-            b for b in pool
-            if b in totals and b != a and character_rules.prefix_alias(a, b) and not any(a in s and b in s for s in para_sets)
-        ]
-        if len(targets) == 1:
-            for m in members(a):
-                root[m] = targets[0]
-            totals[targets[0]] += totals.pop(a)
+        used.update(ids)
+        members = [entry_groups[i] for i in ids]
+        names = {n.casefold(): n for m in members for n in m.names()}
+        group = _Group(names.get(item["name"].casefold(), members[0].primary), description=item["description"])
+        for member in members:
+            _merge_into(group, member)
+        out.append(group)
+    out.extend(g for i, g in enumerate(entry_groups) if i not in used)
+    return out
 
-    profiles: dict = {}
-    if ai_fn:
-        cands = [k for k, n in totals.most_common(AI_CANDIDATES) if n >= MIN_CANDIDATE_MENTIONS]
-        items = []
-        for idx, k in enumerate(cands):
-            forms = Counter()
-            for m in members(k):
-                forms.update(surface_counts[m])
-            items.append({
-                "id": idx, "name": forms.most_common(1)[0][0] if forms else " ".join(k).title(),
-                "snippets": _snippets(paragraphs, locs_of(k), AI_SNIPPETS, AI_WIDTH),
-            })
-        people = ai_fn(items) or []
-        parent = list(range(len(cands)))
 
-        def find(x):
-            while parent[x] != x:
-                parent[x] = parent[parent[x]]
-                x = parent[x]
-            return x
+def _top(votes: Counter) -> str:
+    return min(votes, key=lambda kind: (-votes[kind], RELATION_PRIORITY.index(kind)))
 
-        for person in people:
-            for other in person["ids"][1:]:
-                parent[find(other)] = find(person["ids"][0])
-        by_root: dict = {}
-        for person in people:
-            by_root.setdefault(find(person["ids"][0]), person)
-        clusters: dict = defaultdict(list)
-        for idx in range(len(cands)):
-            clusters[find(idx)].append(cands[idx])
-        for r, keys in clusters.items():
-            primary = max(keys, key=lambda k: totals[k])
-            for other in keys:
-                if other == primary:
-                    continue
-                for m in members(other):
-                    root[m] = primary
-                totals[primary] += totals.pop(other)
-            if r in by_root:
-                profiles[primary] = by_root[r]
 
-    chosen = [k for k, n in totals.most_common(MAX_CHARACTERS) if n >= MIN_MENTIONS]
-    chosen_set = set(chosen)
-    top = totals[chosen[0]] if chosen else 1
+def _relations(chosen: list[_Group], present: list[set], chapters: list[int], chunks: list, results: list) -> list[tuple]:
+    resolve: dict[str, int | None] = {}
+    for pos, group in enumerate(chosen):
+        resolve[group.primary.casefold()] = pos
+    for pos, group in enumerate(chosen):
+        for alias in group.aliases:
+            key = alias.casefold()
+            if key not in resolve or resolve[key] == pos:
+                resolve[key] = pos
+            elif resolve[key] is not None and chosen[resolve[key]].primary.casefold() != key:
+                resolve[key] = None
 
-    infos = {}
-    for rank, k in enumerate(chosen):
-        forms = surface_counts[k]
-        name = (forms.most_common(1)[0][0] if forms else " ".join(k).title())[:100]
-        others = Counter()
-        for member, r in root.items():
-            if r == k and member != k:
-                others.update(surface_counts[member])
-        infos[k] = CharInfo(
-            key=k, name=name, count=totals[k], role=_role(rank, totals[k] / top),
-            aliases=[s for s, _ in others.most_common(3) if s != name],
-        )
+    votes_chapter: dict[tuple, Counter] = defaultdict(Counter)
+    votes_all: dict[tuple, Counter] = defaultdict(Counter)
+    for chunk, result in zip(chunks, results):
+        if result is None:
+            continue
+        for relation in result["relations"]:
+            a, b = resolve.get(relation["a"].casefold()), resolve.get(relation["b"].casefold())
+            evidence = _normalize(relation["evidence"])
+            if a is None or b is None or a == b or len(evidence) < MIN_EVIDENCE_CHARS:
+                continue
+            low, high = sorted((a, b))
+            for index, chapter, text in chunk.paragraphs:
+                if evidence in _normalize(text) and {low, high} <= present[index]:
+                    kind = relation["type"] if relation["type"] in RELATION_PRIORITY else "kenalan"
+                    votes_chapter[(chapter, low, high)][kind] += 1
+                    votes_all[(low, high)][kind] += 1
+                    break
+    if not votes_all:
+        return []
 
-    para_chars: list[set] = []
-    for p, keys in zip(paragraphs, para_keys):
-        present = {root[k] for k in keys if root[k] in chosen_set}
-        para_chars.append(present)
-        for k in present:
-            infos[k].chapters.add(p["chapter_no"])
-            if p.get("emotion"):
-                infos[k].emotions[p["emotion"]] += 1
-
-    by_chapter: dict = defaultdict(list)
-    for i, p in enumerate(paragraphs):
-        by_chapter[p["chapter_no"]].append(i)
-    conflict = [_is_conflict(p) for p in paragraphs]
-    para_votes = [character_rules.relation_votes(p["text"]) if para_chars[i] else Counter() for i, p in enumerate(paragraphs)]
-
+    by_chapter: dict[int, list[int]] = defaultdict(list)
+    for index, chapter in enumerate(chapters):
+        by_chapter[chapter].append(index)
     weights: Counter = Counter()
-    hits: Counter = Counter()
-    votes: dict = defaultdict(Counter)
-    for chapter_no, idx in by_chapter.items():
-        for pos, i in enumerate(idx):
-            window = [i] + ([idx[pos + 1]] if pos + 1 < len(idx) else [])
-            union = set().union(*(para_chars[j] for j in window))
-            flagged = any(conflict[j] for j in window)
+    for chapter, indexes in by_chapter.items():
+        for pos, i in enumerate(indexes):
+            window = [i] + ([indexes[pos + 1]] if pos + 1 < len(indexes) else [])
+            union = set().union(*(present[j] for j in window))
             for a, b in combinations(sorted(union), 2):
-                if a in para_chars[i] or b in para_chars[i]:
-                    weights[(chapter_no, a, b)] += 1
-                    for j in window:
-                        if a in para_chars[j] and b in para_chars[j]:
-                            votes[(chapter_no, a, b)].update(para_votes[j])
-                    if flagged:
-                        hits[(chapter_no, a, b)] += 1
+                if (a, b) in votes_all and (a in present[i] or b in present[i]):
+                    weights[(chapter, a, b)] += 1
 
-    overall: dict = defaultdict(Counter)
-    overall_hits: Counter = Counter()
-    overall_weight: Counter = Counter()
-    for (chapter_no, a, b), w in weights.items():
-        overall[(a, b)].update(votes[(chapter_no, a, b)])
-        overall_hits[(a, b)] += hits[(chapter_no, a, b)]
-        overall_weight[(a, b)] += w
-    overall_kind = {
-        pair: character_rules.pick_relation(v, overall_hits[pair] / overall_weight[pair] >= CONFLICT_SHARE)
-        for pair, v in overall.items()
-    }
-
-    relations = []
-    partner_weight: dict = defaultdict(Counter)
-    for (chapter_no, a, b), w in sorted(weights.items()):
-        if w < MIN_PAIR_WEIGHT:
-            continue
-        kind = (
-            character_rules.pick_relation(votes[(chapter_no, a, b)], hits[(chapter_no, a, b)] / w >= CONFLICT_SHARE)
-            or overall_kind[(a, b)]
-            or "kenalan"
-        )
-        relations.append((chapter_no, a, b, kind, w))
-        partner_weight[a][b] += w
-        partner_weight[b][a] += w
-
-    for k, info in infos.items():
-        surfaces: Counter = Counter()
-        for m in members(k):
-            surfaces.update(surface_counts[m])
-        info.profile = {
-            **character_rules.facts(paragraphs, locs_of(k), surfaces),
-            "personality": None, "background": None, "summary": "",
-        }
-        bits = [v.lower() for v in (info.profile["gender"], info.profile["age"], info.profile["occupation"]) if v]
-        parts = [f"{info.name} adalah {info.role.lower()}" + (f" ({', '.join(bits)})" if bits else "") + "."]
-        described = character_rules.describe(paragraphs, locs_of(k))
-        if described:
-            parts.append(f"Dalam teks digambarkan sebagai “{described}”.")
-        info.biodata = " ".join(parts)
-
-    for k, ai_p in profiles.items():
-        info = infos.get(k)
-        if info is None:
-            continue
-        for f in ("gender", "age", "occupation"):
-            info.profile[f] = info.profile.get(f) or ai_p.get(f)
-        for f in ("personality", "background"):
-            info.profile[f] = ai_p.get(f)
-        if ai_p.get("summary"):
-            info.biodata = ai_p["summary"]
-
-    return Result(characters=[infos[k] for k in chosen], relations=relations)
+    edges = []
+    for chapter, a, b in sorted(set(weights) | set(votes_chapter)):
+        own = votes_chapter.get((chapter, a, b))
+        weight = weights[(chapter, a, b)]
+        if own or weight >= MIN_PAIR_WEIGHT:
+            edges.append((chapter, a, b, _top(own or votes_all[(a, b)]), max(weight, 1)))
+    return edges
 
 
-def extract(db: Session, doc: Document, ner=None, ai: bool = False) -> tuple[int, int, bool]:
-    paragraphs = list(doc.paragraphs)
-    texts = [p.text for p in paragraphs]
-    found = (ner or detect)(texts)
-    mentions = [surfaces_from(ents, t[:MAX_TEXT_CHARS]) for ents, t in zip(found, texts)]
-    meta = [
-        {
-            "chapter_no": p.chapter_no, "emotion": p.emotion, "emotion_score": p.emotion_score,
-            "violence": p.violence, "profanity": p.profanity, "sexual": p.sexual, "text": p.text,
-        }
-        for p in paragraphs
-    ]
-    ai_ok = True
+def build(paragraphs: list[dict], chunks: list, results: list, merge_fn=None) -> Result:
+    if chunks and all(r is None for r in results):
+        raise CharacterError("Layanan AI tidak berhasil membaca satu pun bagian buku ini.")
+    if not chunks:
+        return Result([], [])
+    complete = all(r is not None for r in results)
+    texts = [p["text"] for p in paragraphs]
+    chapters = [p["chapter_no"] for p in paragraphs]
 
-    def ask(items):
-        nonlocal ai_ok
-        people = character_ai.safe(items)
-        ai_ok = people is not None
-        return people
+    groups = _candidates(chunks, results)
+    counts, alias_counts, narrated = _mentions(texts, chapters, groups)
+    totals = [sum(c[g] for c in counts) for g in range(len(groups))]
+    ranked = sorted((g for g in range(len(groups)) if totals[g] >= MIN_MENTIONS), key=lambda g: -totals[g])[:MAX_MERGE_ENTRIES]
 
-    result = build(meta, mentions, ai_fn=ask if ai else None)
+    if len(chunks) > 1 and ranked:
+        entries = [
+            {"id": n, "name": groups[g].primary, "aliases": groups[g].aliases, "count": totals[g], "roles": groups[g].roles[:MAX_ROLES_SENT]}
+            for n, g in enumerate(ranked)
+        ]
+        answer = (merge_fn or character_ai.merge_safe)(entries)
+        if answer is None:
+            complete = False
+        else:
+            groups = _apply_merge([groups[g] for g in ranked], answer)
+            counts, alias_counts, narrated = _mentions(texts, chapters, groups)
+            totals = [sum(c[g] for c in counts) for g in range(len(groups))]
+
+    order = sorted((g for g in range(len(groups)) if totals[g] >= MIN_MENTIONS), key=lambda g: -totals[g])[:MAX_CHARACTERS]
+    chosen = [groups[g] for g in order]
+    position = {g: pos for pos, g in enumerate(order)}
+
+    present: list[set] = []
+    for i, counter in enumerate(counts):
+        here = {position[g] for g, n in counter.items() if n > 0 and g in position}
+        here |= {position[g] for g in order if chapters[i] in narrated.get(g, ())}
+        present.append(here)
+
+    infos = []
+    for pos, g in enumerate(order):
+        group = groups[g]
+        seen = [i for i, counter in enumerate(counts) if counter[g] > 0]
+        shown = sorted((a for a in group.aliases if name_like(a) and alias_counts[(g, a)] > 0), key=lambda a: -alias_counts[(g, a)])
+        chapter_set = {chapters[i] for i in seen}
+        basic = f"{group.primary} disebut {totals[g]} kali di {len(chapter_set)} bab."
+        infos.append(CharInfo(
+            key=pos, name=group.primary[:100], count=totals[g], chapters=chapter_set, aliases=shown[:MAX_ALIASES_SHOWN],
+            biodata=group.description or (group.roles[0] if group.roles else "") or basic,
+        ))
+    return Result(infos, _relations(chosen, present, chapters, chunks, results), complete)
+
+
+def extract(db: Session, doc: Document) -> tuple[int, int, bool]:
+    if not character_ai.available():
+        raise CharacterError("Deteksi tokoh butuh layanan AI (9router atau Gemini) di server.")
+    paragraphs = [{"chapter_no": p.chapter_no, "text": p.text, "sexual": p.sexual or 0.0} for p in doc.paragraphs]
+    chunks = character_ai.make_chunks(paragraphs)
+    result = build(paragraphs, chunks, character_ai.read_chunks(chunks))
 
     old_ids = list(db.scalars(select(Character.id).where(Character.document_id == doc.id)))
     if old_ids:
@@ -420,11 +331,9 @@ def extract(db: Session, doc: Document, ner=None, ai: bool = False) -> tuple[int
 
     rows = {}
     for info in result.characters:
-        pf = info.profile
         row = Character(
-            document_id=doc.id, name=info.name, role=info.role, biodata=info.biodata, mention_count=info.count,
-            aliases=", ".join(info.aliases) or None, gender=pf.get("gender"), age=pf.get("age"),
-            occupation=pf.get("occupation"), personality=pf.get("personality"), background=pf.get("background"),
+            document_id=doc.id, name=info.name, biodata=info.biodata, mention_count=info.count,
+            aliases=", ".join(info.aliases) or None,
         )
         db.add(row)
         rows[info.key] = row
@@ -442,10 +351,10 @@ def extract(db: Session, doc: Document, ner=None, ai: bool = False) -> tuple[int
         made += 1
     db.commit()
     db.expire_all()
-    return len(result.characters), made, ai_ok
+    return len(result.characters), made, result.complete
 
 
-def run(doc_id: int, ai: bool = False) -> None:
+def run(doc_id: int) -> None:
     with SessionLocal() as db:
         doc = db.get(Document, doc_id)
         if doc is None:
@@ -454,8 +363,10 @@ def run(doc_id: int, ai: bool = False) -> None:
         db.commit()
         try:
             with _lock:
-                _, _, ai_ok = extract(db, doc, ai=ai)
-            status = "done" if ai_ok else "partial"
+                _, _, complete = extract(db, doc)
+            status = "done" if complete else "partial"
+            if not complete:
+                log.warning("Deteksi tokoh dokumen %s selesai sebagian: ada bagian buku atau penggabungan yang gagal diproses LLM", doc_id)
         except Exception:
             log.exception("Deteksi tokoh dokumen %s gagal", doc_id)
             db.rollback()
@@ -466,8 +377,8 @@ def run(doc_id: int, ai: bool = False) -> None:
             db.commit()
 
 
-def start(doc_id: int, ai: bool = False) -> None:
-    threading.Thread(target=run, args=(doc_id, ai), name=f"characters-{doc_id}", daemon=True).start()
+def start(doc_id: int) -> None:
+    threading.Thread(target=run, args=(doc_id,), name=f"characters-{doc_id}", daemon=True).start()
 
 
 def reset_stale() -> None:

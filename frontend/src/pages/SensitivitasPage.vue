@@ -19,7 +19,6 @@ const error = ref('')
 const notice = ref('')
 const saving = ref(false)
 
-// draft per jenis konten: on = disamarkan, value = ambang (skor model minimal agar disamarkan)
 const draft = reactive(Object.fromEntries(KEYS.map((k) => [k, { on: false, value: STANDARD_THRESHOLDS[k] }])))
 
 function fill(thresholds) {
@@ -149,7 +148,7 @@ onMounted(load)
               <h2 class="text-lg font-semibold">{{ DIMENSIONS[k].label }}</h2>
             </div>
             <label class="inline-flex shrink-0 cursor-pointer items-center gap-2 text-sm font-semibold text-navy" :class="{ 'cursor-not-allowed': !editable }">
-              <input v-model="draft[k].on" type="checkbox" class="size-4 accent-navy" :disabled="!editable" />
+              <input v-model="draft[k].on" type="checkbox" class="size-4 cursor-pointer accent-navy" :disabled="!editable" />
               Samarkan
             </label>
           </div>

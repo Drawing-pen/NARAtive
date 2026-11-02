@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.schemas import LoginIn, RegisterIn, RegistrationStarted, ResendIn, TokenOut, UserOut, VerifyIn
-from app.core.security import create_access_token, get_current_user, verify_password
+from app.api.schemas import (
+    AccountDelete, LoginIn, PasswordChange, ProfileUpdate, RegisterIn, RegistrationStarted, ResendIn, ResetIn, TokenOut, UserOut, VerifyIn,
+)
+from app.core.security import create_access_token, get_current_user, hash_password, verify_password
 from app.db.database import get_db
 from app.db.models import User
-from app.services import verification
+from app.services import accounts, password_reset, verification
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -42,6 +44,18 @@ def verify_registration(body: VerifyIn, db: Session = Depends(get_db)):
     return _token_for(verification.verify(db, body.email.lower(), body.code))
 
 
+@router.post("/password/forgot", response_model=RegistrationStarted, status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(body: ResendIn, db: Session = Depends(get_db)):
+    email = body.email.lower()
+    password_reset.start(db, email)
+    return _started(email)
+
+
+@router.post("/password/reset", response_model=TokenOut)
+def reset_password(body: ResetIn, db: Session = Depends(get_db)):
+    return _token_for(password_reset.reset(db, body.email.lower(), body.code, body.new_password))
+
+
 @router.post("/login", response_model=TokenOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == body.email.lower()))
@@ -55,3 +69,27 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.patch("/me", response_model=UserOut)
+def rename(body: ProfileUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user.name = body.name
+    db.commit()
+    return user
+
+
+@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(body: PasswordChange, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kata sandi lama salah.")
+    if body.new_password == body.current_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kata sandi baru harus berbeda dari yang lama.")
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(body: AccountDelete, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Kata sandi salah.")
+    accounts.delete_account(db, user)

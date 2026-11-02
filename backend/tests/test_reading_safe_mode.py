@@ -33,7 +33,7 @@ def test_paragraphs_come_in_reading_order_with_scores(client, make_user, make_do
     assert res.status_code == 200
     body = res.json()
     assert [p["idx"] for p in body] == [0, 1]
-    assert set(body[0]) == {"idx", "chapter_no", "text", "profanity", "sexual", "violence", "emotion"}
+    assert set(body[0]) == {"idx", "chapter_no", "text", "markdown", "kind", "profanity", "sexual", "violence", "emotion"}
     assert body[0]["text"] == "Paragraf pertama."
 
 

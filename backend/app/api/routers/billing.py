@@ -76,6 +76,7 @@ def checkout(body: CheckoutIn, user: User = Depends(get_current_user), db: Sessi
     )
     db.add(tx)
     db.commit()
+    billing.send_instructions(user, tx)
     return tx
 
 

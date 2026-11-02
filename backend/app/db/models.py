@@ -50,6 +50,17 @@ class EmailVerification(Base):
     last_sent_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_sent_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class SensitivityProfile(Base):
     """Ambang batas Safe Mode personal (UC-12, khusus High Tier). NULL = jenis konten itu tidak disamarkan."""
     __tablename__ = "sensitivity_profiles"
@@ -181,6 +192,8 @@ class Paragraph(Base):
     idx: Mapped[int] = mapped_column(Integer)
     chapter_no: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     text: Mapped[str] = mapped_column(Text)
+    markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(String(8), default="p", server_default="p")
     profanity: Mapped[float | None] = mapped_column(Float, nullable=True) 
     sexual: Mapped[float | None] = mapped_column(Float, nullable=True)
     violence: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -196,7 +209,7 @@ class Character(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(100))
-    role: Mapped[str] = mapped_column(String(50))
+    role: Mapped[str] = mapped_column(String(50), default="")
     biodata: Mapped[str | None] = mapped_column(Text, nullable=True)
     mention_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     photo_path: Mapped[str | None] = mapped_column(String(255), nullable=True)

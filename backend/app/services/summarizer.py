@@ -1,9 +1,3 @@
-"""UC-09: rangkuman per bab dan keseluruhan buku lewat Gemini API (layanan eksternal sesuai SDD).
-
-Dijalankan di thread latar (bukan antrean analisis) supaya tidak menghambat model.
-Alur: tiap bab diringkas satu per satu -> rangkuman-rangkuman bab digabung menjadi rangkuman buku.
-Teks buku hanya dikirim saat pengguna menekan tombol "Buat rangkuman".
-"""
 import json
 import logging
 import re
@@ -127,16 +121,117 @@ def visible_texts(paragraphs, marker: str | None = None, strict: bool = False) -
     return out
 
 
-def configured() -> bool:
+def gemini_active() -> bool:
     return bool(settings.gemini_api_key.strip())
 
 
-def _note(purpose: str, model: str, outcome: str, started: float, detail: str = "") -> None:
-    request_log.info("Gemini | %s | model=%s | %s | %.1f detik%s", purpose or "tanpa label", model, outcome, time.monotonic() - started, detail)
+def router_active() -> bool:
+    return all(v.strip() for v in (settings.router_base_url, settings.router_api_key, settings.router_model))
+
+
+def configured() -> bool:
+    return router_active() or gemini_active()
+
+
+def _note(purpose: str, model: str, outcome: str, started: float, detail: str = "", provider: str = "Gemini") -> None:
+    request_log.info("%s | %s | model=%s | %s | %.1f detik%s", provider, purpose or "tanpa label", model, outcome, time.monotonic() - started, detail)
+
+
+ROUTER_COOLDOWN = 60
+_router_blocked_until = 0.0
+_FENCE = re.compile(r"^```[a-zA-Z]*\s*(.*?)\s*```$", re.DOTALL)
+
+
+def _router_error(kind: type[SummaryError], message: str, hold: bool) -> SummaryError:
+    error = kind(message)
+    error.hold = hold
+    return error
+
+
+def _lower_types(node):
+    if isinstance(node, dict):
+        return {k: (v.lower() if k == "type" and isinstance(v, str) else _lower_types(v)) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_lower_types(v) for v in node]
+    return node
+
+
+def _router_generate(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, purpose: str) -> str:
+    key = settings.router_api_key.strip()
+    model = settings.router_model.strip()
+    payload = {"model": model, "stream": False, "temperature": temperature, "max_tokens": max_tokens}
+    if schema:
+        system += ("\n\nKeluarkan HANYA satu objek JSON valid (tanpa pagar kode atau teks lain) yang sesuai skema berikut:\n"
+                   + json.dumps(_lower_types(schema), ensure_ascii=False))
+        payload["response_format"] = {"type": "json_object"}
+    payload["messages"] = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+    req = urllib.request.Request(
+        settings.router_base_url.strip().rstrip("/") + "/chat/completions", data=json.dumps(payload).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+    )
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=settings.router_timeout) as resp:
+            data = json.load(resp)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:300].replace(key, "***")
+        _note(purpose, model, f"galat {e.code}", started, provider="9router")
+        if e.code == 429:
+            raise _router_error(QuotaError, f"9router membatasi permintaan (429): {detail}", True)
+        raise _router_error(SummaryError, f"9router menolak permintaan ({e.code}): {detail}", True)
+    except (urllib.error.URLError, OSError) as e:
+        _note(purpose, model, "jaringan gagal", started, provider="9router")
+        raise _router_error(SummaryError, f"Tidak bisa menghubungi 9router: {e}".replace(key, "***"), True)
+    except ValueError:
+        _note(purpose, model, "balasan rusak", started, provider="9router")
+        raise _router_error(SummaryError, "Balasan 9router tidak dapat dibaca.", True)
+    choices = data.get("choices") or []
+    choice = choices[0] if choices else {}
+    content = (choice.get("message") or {}).get("content") or ""
+    if isinstance(content, list):
+        content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    text = content.strip()
+    reason = choice.get("finish_reason") or "kosong"
+    if not text:
+        _note(purpose, model, f"tanpa teks ({reason})", started, provider="9router")
+        if reason == "content_filter":
+            raise _router_error(SafetyBlock, "9router menahan teks karena kebijakan keamanan (content_filter).", False)
+        raise _router_error(SummaryError, f"9router tidak mengembalikan teks ({reason}).", False)
+    if schema:
+        fenced = _FENCE.match(text)
+        text = fenced.group(1) if fenced else text
+        try:
+            json.loads(text)
+        except ValueError:
+            _note(purpose, model, "bukan JSON", started, provider="9router")
+            raise _router_error(SummaryError, "Jawaban 9router bukan JSON yang sah.", False)
+    usage = data.get("usage") or {}
+    _note(purpose, model, "ok", started, f" | token masuk={usage.get('prompt_tokens', '?')} keluar={usage.get('completion_tokens', '?')}", provider="9router")
+    return text
 
 
 def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, temperature: float = 0.3, max_tokens: int = 2048,
               prefer: str = "", purpose: str = "") -> str:
+    """9router lebih dulu, Gemini sebagai cadangan (13A R10). Pemanggil tidak perlu tahu penyedianya."""
+    global _router_blocked_until
+    failure = None
+    if router_active():
+        if time.monotonic() < _router_blocked_until:
+            failure = SummaryError("9router sedang ditahan sementara setelah gagal; coba lagi sebentar lagi.")
+        else:
+            try:
+                return _router_generate(prompt, system, schema, temperature, max_tokens, purpose)
+            except SummaryError as e:
+                failure = e
+                if getattr(e, "hold", True):
+                    _router_blocked_until = time.monotonic() + ROUTER_COOLDOWN
+                log.warning("9router gagal (%s)%s", e, ", memakai Gemini." if gemini_active() else ".")
+    if failure is not None and not gemini_active():
+        raise failure
+    return _generate_gemini(prompt, system, schema, temperature, max_tokens, prefer, purpose)
+
+
+def _generate_gemini(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, prefer: str, purpose: str) -> str:
     config = {"temperature": temperature, "maxOutputTokens": max_tokens}
     if schema:
         config.update({"responseMimeType": "application/json", "responseSchema": schema})

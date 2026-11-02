@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.plans import LIMITS, PAY_PER_CHECK_PRICE, PERIOD_DAYS, PLAN_LABEL, UPGRADE_PRICE
 from app.db.models import Document, Transaction, UsageQuota, User
-from app.services import mailer
+from app.services import email_templates, mailer
 
 TIER_RANK = {"free": 0, "middle": 1, "high": 2}
 MONTHS_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
@@ -77,12 +77,6 @@ def price_for(kind: str, plan: str | None, quantity: int) -> int:
     return UPGRADE_PRICE[plan] if kind == "upgrade" else PAY_PER_CHECK_PRICE * quantity
 
 
-def item_label(tx: Transaction) -> str:
-    if tx.kind == "upgrade":
-        return f"Paket {PLAN_LABEL[tx.plan]} ({PERIOD_DAYS} hari)"
-    return f"{tx.quantity} analisis tambahan (pay-per-check)"
-
-
 def refresh(db: Session, tx: Transaction) -> Transaction:
     """VA yang lewat batas waktunya dianggap kedaluwarsa."""
     if tx.status == "pending" and tx.expires_at <= datetime.utcnow():
@@ -109,15 +103,10 @@ def settle(db: Session, tx: Transaction) -> None:
 
 
 def send_invoice(user: User, tx: Transaction) -> None:
-    total = f"Rp {tx.amount:,}".replace(",", ".")
-    body = (
-        f"Halo {user.name},\n\nTerima kasih, pembayaranmu di NARAtive sudah kami terima.\n\n"
-        f"No. pesanan : {tx.order_id}\n"
-        f"Item        : {item_label(tx)}\n"
-        f"Total       : {total}\n"
-        f"Bank (VA)   : {tx.bank.upper()} {tx.va_number}\n"
-        f"Dibayar     : {tx.paid_at:%d-%m-%Y %H:%M} UTC\n"
-    )
-    if tx.kind == "upgrade" and user.tier_expires_at:
-        body += f"Aktif sampai: {user.tier_expires_at:%d-%m-%Y}\n"
-    mailer.send(user.email, f"Invoice NARAtive {tx.order_id}", body + "\nSalam,\nNARAtive")
+    mail = email_templates.invoice(user, tx)
+    mailer.send(user.email, mail.subject, mail.text, mail.html)
+
+
+def send_instructions(user: User, tx: Transaction) -> None:
+    mail = email_templates.payment_instructions(user, tx)
+    mailer.send(user.email, mail.subject, mail.text, mail.html)
