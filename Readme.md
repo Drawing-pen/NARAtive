@@ -294,7 +294,8 @@ Pembayaran lewat Midtrans (Virtual Account) bila kunci diisi, atau mode simulasi
 
 ## Dokumen
 
-- Spesifikasi kebutuhan yang berlaku (aturan, keputusan, changelog): `docs/SPEC.md`
+- Spesifikasi kebutuhan yang berlaku (aturan dan keputusan): `docs/SPEC.md`
+- Riwayat perubahan dan penyimpangan dari SRS dan SDD: `docs/CHANGELOG.md`
 - Konteks untuk agen pengembang: `docs/CLAUDE.md`
 - Software Requirements Specification: `docs/SRS NARAtive_11241076_IPPL B (4).pdf`
 - Software Design Description: `docs/SDD NARAtive_11241076_IPPL B (3).pdf`

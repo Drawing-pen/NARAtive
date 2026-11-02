@@ -11,11 +11,11 @@ NARAtive adalah situs web yang membaca e-book (PDF atau EPUB), menganalisis isin
 - Hasil adalah prediksi model, bukan pengganti penilaian manusia. Jangan menulis klaim yang melebihi itu di UI maupun dokumen.
 - SRS dan SDD ada di `docs/`. Rana memperbarui SRS, SDD, dan diagramnya sendiri; jangan mengubahnya.
 
-**`docs/SPEC.md` adalah sumber kebutuhan resmi dan satu-satunya tempat keputusan, aturan bisnis, status use case, dan changelog (bagian 14).** Jika SPEC.md berbeda dengan berkas ini atau SRS/SDD, SPEC.md yang menang. Jika berbeda dengan kode, kode adalah kenyataan: laporkan selisihnya dan perbarui SPEC.md atas persetujuan Rana (Rana sudah mengizinkan agen mengedit SPEC.md untuk keperluan ini). Item "Undecided" tidak boleh dibangun tanpa persetujuan.
+**`docs/SPEC.md` adalah sumber kebutuhan resmi dan satu-satunya tempat keputusan, aturan bisnis, dan status use case; riwayat perubahan dan penyimpangan dari SRS dan SDD ada di `docs/CHANGELOG.md`.** Jika SPEC.md berbeda dengan berkas ini atau SRS/SDD, SPEC.md yang menang. Jika berbeda dengan kode, kode adalah kenyataan: laporkan selisihnya dan perbarui SPEC.md atas persetujuan Rana (Rana sudah mengizinkan agen mengedit SPEC.md untuk keperluan ini). Item "Undecided" tidak boleh dibangun tanpa persetujuan.
 
 ## 2. Aturan kerja
 
-1. **Siklus per irisan fitur:** (a) aturan diputuskan Rana dan ditulis ke SPEC.md, (b) tes yang gagal lebih dulu, (c) implementasi minimal, (d) verifikasi dan laporan jujur tentang apa yang diuji dan belum, (e) sinkronkan SPEC.md dan changelognya. Kode yang ada diperbaiki per irisan, bukan ditulis ulang.
+1. **Siklus per irisan fitur:** (a) aturan diputuskan Rana dan ditulis ke SPEC.md, (b) tes yang gagal lebih dulu, (c) implementasi minimal, (d) verifikasi dan laporan jujur tentang apa yang diuji dan belum, (e) sinkronkan SPEC.md dan catat perubahannya di `docs/CHANGELOG.md`. Kode yang ada diperbaiki per irisan, bukan ditulis ulang.
 2. **Jangan membangun yang tidak diminta.** Usulan boleh disampaikan, tunggu persetujuan Rana.
 3. **Rancang untuk semua jenis buku**, jangan disetel ke satu atau dua buku contoh: bahasa, kata ganti orang pertama, PDF teks, scan, dan berkolom apa pun. Perbaikan parser dan LLM harus umum dan diuji dengan data buatan kode yang beragam.
 4. **Batas tier tidak diubah** (halaman per unggahan, kuota bulanan, e-book aktif) kecuali Rana memutuskannya; semua tier menerima semua jenis PDF.
@@ -63,7 +63,8 @@ frontend/src/
                               CheckoutDialog, badge dan chip, UserAvatar, ReadingBlock, dll.
   lib/                        api.js (Axios + token), auth.js, characters.js, content.js, markdown.js, icons.js
   router/index.js
-docs/                         SPEC.md (sumber kebutuhan), SRS dan SDD (milik Rana), CLAUDE.md (berkas ini)
+docs/                         SPEC.md (sumber kebutuhan), CHANGELOG.md (riwayat dan penyimpangan dari SRS/SDD),
+                              SRS dan SDD (milik Rana), CLAUDE.md (berkas ini)
 ```
 
 Rute frontend: `/` beranda, `/koleksi`, `/profil`, `/berlangganan`, `/masuk`, `/daftar`, `/lupa-sandi`; ruang kerja satu buku di `/buku/:id` dengan anak `baca`, `rangkuman`, `tokoh`, `relasi`, `sensitivitas`. Halaman buku, koleksi, dan profil butuh login (`meta.requiresAuth`); halaman masuk, daftar, dan lupa kata sandi hanya untuk tamu (`meta.guest`).
