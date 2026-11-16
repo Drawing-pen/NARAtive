@@ -51,7 +51,7 @@ def create_collection(body: CollectionIn, user: User = Depends(get_current_user)
     db.flush()
     _set_members(db, user, col, body.document_ids)
     db.flush()
-    service.prune_empty(db, user.id)    # buku yang dipindah dari koleksi lain bisa membuatnya kosong
+    service.prune_empty(db, user.id)
     db.commit()
     return _out(db, col)
 

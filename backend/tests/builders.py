@@ -50,6 +50,34 @@ def blank_pdf(pages: int = 2) -> bytes:
     return data
 
 
+def make_scanned_pdf(pages, *, encrypted: str | None = None) -> bytes:
+    """Setiap halaman hanya berisi gambar (tanpa lapisan teks), seperti hasil scan."""
+    doc = pymupdf.open()
+    for text in pages:
+        source = pymupdf.open()
+        sheet = source.new_page(width=420, height=595)
+        if text:
+            sheet.insert_textbox(pymupdf.Rect(36, 40, 384, 560), text, fontsize=13, fontname="helv")
+        pixmap = sheet.get_pixmap(dpi=150, alpha=False)
+        page = doc.new_page(width=420, height=595)
+        page.insert_image(page.rect, pixmap=pixmap)
+        source.close()
+    if encrypted:
+        data = doc.tobytes(encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=encrypted, owner_pw=encrypted)
+    else:
+        data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def encrypted_pdf(password: str = "rahasia") -> bytes:
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 90), "Isi rahasia yang tidak boleh terbaca tanpa kata sandi.", fontsize=11)
+    data = doc.tobytes(encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=password, owner_pw=password)
+    doc.close()
+    return data
+
+
 CONTAINER = (
     '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
     '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'

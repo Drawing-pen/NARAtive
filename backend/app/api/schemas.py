@@ -89,11 +89,29 @@ class TokenOut(BaseModel):
     user: UserOut
 
 
+class DimensionOut(BaseModel):
+    key: str
+    label: str
+    percent: float
+    paragraphs: int
+    threshold: float
+
+
+class RatingOut(BaseModel):
+    rating: str
+    age_range: str
+    dimensions: list[DimensionOut]
+    reasons: list[str]
+    note: str
+
+
 class DocumentOut(BaseModel):
     id: int
     title: str
     page_count: int
     status: str
+    read_pages: int = 0
+    failure_reason: str | None = None
     rating: str | None
     pct_profanity: float | None
     pct_sexual: float | None
@@ -273,3 +291,58 @@ class SummaryOut(BaseModel):
     total_chapters: int
     overall: str | None
     chapters: list[ChapterSummaryOut]
+
+class DayCount(BaseModel):
+    date: str
+    count: int
+
+
+class DayAmount(BaseModel):
+    date: str
+    amount: int
+
+
+class AdminUsers(BaseModel):
+    total: int
+    inactive: int
+    per_tier: dict[str, int]
+    signups: list[DayCount]
+
+
+class PlanRevenue(BaseModel):
+    count: int
+    amount: int
+
+
+class AdminRevenue(BaseModel):
+    paid_total: int
+    paid_this_month: int
+    by_status: dict[str, int]
+    by_plan: dict[str, PlanRevenue]
+    per_day: list[DayAmount]
+
+
+class FailureReason(BaseModel):
+    reason: str
+    count: int
+
+
+class AdminDocuments(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    uploads: list[DayCount]
+    failure_reasons: list[FailureReason]
+    summary: dict[str, int]
+    characters: dict[str, int]
+
+
+class AdminQuota(BaseModel):
+    at_limit: int
+
+
+class AdminOverviewOut(BaseModel):
+    users: AdminUsers
+    revenue: AdminRevenue
+    documents: AdminDocuments
+    quota: AdminQuota
+    generated_at: datetime

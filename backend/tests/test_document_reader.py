@@ -5,7 +5,8 @@ import pytest
 from app.api.routers import documents
 from app.core.config import settings
 from app.db import models
-from app.extraction import reader
+from app.extraction import ocr, reader
+from app.services import reader_jobs
 from app.extraction.epub_utils import EpubError
 from tests.builders import blank_pdf, drm_encryption, make_epub, make_pdf, prose
 
@@ -124,6 +125,9 @@ class TestUpload:
         monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
         monkeypatch.setattr(documents, "model_ready", lambda: True)
         monkeypatch.setattr(documents, "enqueue", lambda doc_id: None)
+        monkeypatch.setattr(reader_jobs.jobs, "enqueue", lambda doc_id: None)
+        monkeypatch.setattr(reader_jobs, "enqueue_read", reader_jobs.process_read)
+        monkeypatch.setattr(ocr, "ocr_ready", lambda: False)
 
     def upload(self, client, auth, user, data, name="Buku.pdf", mime="application/pdf"):
         return client.post("/documents", files={"file": (name, data, mime)}, headers=auth(user))
@@ -160,7 +164,10 @@ class TestUpload:
         items = client.get(f"/documents/{doc_id}/paragraphs", headers=auth(user)).json()
         assert any(i["markdown"] and "**tebal**" in i["markdown"] for i in items) and all(i["kind"] for i in items)
 
-    def test_a_pdf_without_text_is_still_rejected(self, client, db, auth, make_user, monkeypatch):
+    def test_a_pdf_without_text_becomes_a_failed_book_with_a_reason(self, client, db, auth, make_user, monkeypatch):
         monkeypatch.setattr(settings, "document_parser", "markdown")
         res = self.upload(client, auth, make_user("middle"), blank_pdf(2))
-        assert res.status_code == 400 and res.json()["detail"] == "File tidak berisi teks yang dapat dianalisis."
+        assert res.status_code == 201
+        db.expire_all()
+        doc = db.get(models.Document, res.json()["id"])
+        assert doc.status == "failed" and doc.failure_reason == reader_jobs.NO_TEXT

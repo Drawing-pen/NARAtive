@@ -1,7 +1,3 @@
-"""Bandingkan parser lama dan parser Markdown pada berkas yang diberikan.
-
-Pemakaian (dari folder backend): python -m app.tools.compare_parsers buku1.pdf buku2.epub
-"""
 import os
 import sys
 import time

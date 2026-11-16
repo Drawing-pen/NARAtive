@@ -214,6 +214,10 @@ python -m uvicorn app.main:app --reload
 
 API tersedia di `http://localhost:8000`, dokumentasi interaktif di `http://localhost:8000/docs`.
 
+### Opsional: Tesseract untuk PDF hasil scan
+
+PDF yang berisi gambar halaman (hasil scan) dibaca otomatis lewat OCR di server; pengguna cukup mengunggah. Agar ini berjalan di komputer lokal, pasang Tesseract (Windows: installer UB Mannheim) dan centang paket bahasa **Indonesian** dan English. Folder `tessdata` dicari otomatis (`TESSDATA_DIR`, `TESSDATA_PREFIX`, atau lokasi standar seperti `C:\Program Files\Tesseract-OCR\tessdata`). Tanpa Tesseract, PDF teks tetap berjalan normal dan PDF scan gagal diproses dengan pesan yang jelas. Image Docker sudah memasangnya.
+
 ### 3. Frontend
 
 ```bat
@@ -269,7 +273,7 @@ Dijalankan dari folder `backend` dengan venv aktif. Tes frontend: `npx vitest ru
 |----------|----------|
 | `python -m alembic upgrade head` | Terapkan migrasi basis data |
 | `python -m uvicorn app.main:app --reload` | Jalankan server backend |
-| `python -m pytest` | Jalankan tes backend (sekitar 6 menit) |
+| `python -m pytest` | Jalankan tes backend (sekitar 10 sampai 15 menit) |
 | `python -m app.tools.compare_parsers berkas.pdf berkas.epub` | Bandingkan parser lama dan Markdown pada naskah |
 | `python -m app.tools.tokoh [id ...]` | Deteksi tokoh dan cetak laporan (butuh 9router atau Gemini) |
 | `python -m app.tools.atur_tier email free\|middle\|high` | Ubah tingkatan akun secara manual untuk uji |

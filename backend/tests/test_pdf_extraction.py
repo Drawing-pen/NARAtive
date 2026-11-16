@@ -115,6 +115,20 @@ class TestSplitChapters:
         titles, _ = self.split(f"{toc}\n\nBab 1\n\n{prose(2)}\n\nBab 2\n\n{prose(2, 2)}")
         assert titles == ["Bab 1", "Bab 2"]
 
+    def test_a_title_listed_at_the_end_of_a_table_of_contents_is_not_a_chapter(self):
+        text = f"Daftar Isi\nAwal 1\nTengah 15\nEpilog 29\nEpilog\n{prose(3)}"
+        titles, paras = self.split(text)
+        assert titles == ["Daftar Isi"]
+        assert not any(t.startswith("Epilog") for _, t in paras)
+
+    def test_a_title_standing_alone_after_a_table_of_contents_stays_a_chapter(self):
+        titles, _ = self.split(f"Daftar Isi\nAwal 1\nEpilog 29\n\nProlog\n\n{prose(2)}\n\nEpilog\n\n{prose(2, 2)}")
+        assert titles == ["Daftar Isi", "Prolog", "Epilog"]
+
+    def test_a_title_after_a_numbered_line_is_a_chapter_when_no_table_of_contents_precedes_it(self):
+        titles, _ = self.split(f"{prose(2)}\n1\nEpilog\n{prose(2, 2)}")
+        assert titles == ["Pembuka", "Epilog"]
+
     def test_extra_headings_supplied_by_the_caller_are_used(self):
         titles, _ = self.split(f"Awal Mula\n\n{prose(2)}\n\nPertemuan\n\n{prose(2, 2)}", extra={"Awal Mula", "Pertemuan"})
         assert titles == ["Awal Mula", "Pertemuan"]
@@ -158,6 +172,19 @@ class TestReadPdf:
         pages = [f"Awal\n\n{prose(3)}", f"Tengah\n\n{prose(3, 2)}"]
         _, titles, _ = read(make_pdf(pages, sizes={"Awal": 22, "Tengah": 22}))
         assert titles == ["Awal", "Tengah"]
+
+    def test_big_titles_are_still_tried_when_the_only_regex_hit_was_in_the_table_of_contents(self, read):
+        contents = f"Daftar Isi\nAwal 1\nTengah 2\nEpilog\n{prose(2)}"
+        pages = [contents, f"Awal\n\n{prose(3, 2)}", f"Tengah\n\n{prose(3, 3)}"]
+        _, titles, _ = read(make_pdf(pages, sizes={"Awal": 22, "Tengah": 22}))
+        assert "Awal" in titles and "Tengah" in titles and "Epilog" not in titles
+
+    def test_a_long_pdf_whose_only_title_is_the_contents_falls_back_to_sections(self, read):
+        contents = f"Daftar Isi\nAwal 1\nTengah 2\nEpilog\n{prose(2)}"
+        pages = [prose(2, 9), contents] + [f"Halaman isi {i}. {prose(1, i)} Nomor unik {i * 7919}." for i in range(1, 40)]
+        _, titles, paras = read(make_pdf(pages))
+        assert len(titles) >= 3 and any(t.startswith("Halaman 21") for t in titles)
+        assert "Epilog" not in titles
 
     def test_page_numbers_in_the_margin_are_removed(self, read):
         _, _, paras = read(make_pdf([f"Bab 1\n\n{prose(3)}", f"Bab 2\n\n{prose(3, 2)}"], footer_numbers=True))

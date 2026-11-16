@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { refreshUser } from '@/lib/auth'
 import Header from '@/components/Header.vue'
 import Footer from '@/components/Footer.vue'
+import UpgradeDialog from '@/components/UpgradeDialog.vue'
 
 const route = useRoute()
 onMounted(refreshUser)
@@ -16,5 +17,6 @@ onMounted(refreshUser)
       <RouterView />
     </main>
     <Footer v-if="!route.meta.bare" />
+    <UpgradeDialog />
   </div>
 </template>

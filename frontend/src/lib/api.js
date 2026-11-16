@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { auth, logout } from '@/lib/auth'
+import { showUpgrade, tierDenial } from '@/lib/upgrade'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
@@ -21,6 +22,11 @@ api.interceptors.response.use(
       const current = router.currentRoute.value
       if (!current.meta.guest) router.replace({ name: 'login', query: { next: current.fullPath, expired: '1' } })
     }
+    const denial = auth.token ? tierDenial(error) : null
+    if (denial) {
+      error.tierDenied = true
+      showUpgrade(denial)
+    }
     return Promise.reject(error)
   },
 )
@@ -28,6 +34,7 @@ api.interceptors.response.use(
 const FIELD_LABEL = { title: 'Judul', name: 'Nama', email: 'Email', password: 'Kata sandi' }
 
 export function errorMessage(error, fallback = 'Terjadi kesalahan. Coba lagi.') {
+  if (error?.tierDenied) return ''
   if (!error?.response) return 'Tidak dapat terhubung ke server. Pastikan backend sedang berjalan.'
   const detail = error.response.data?.detail
   if (typeof detail === 'string') return detail

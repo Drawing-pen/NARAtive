@@ -20,7 +20,7 @@ def _deliver(msg: EmailMessage) -> None:
                 smtp.login(settings.smtp_user, settings.smtp_password)
             smtp.send_message(msg)
     except Exception:
-        log.exception("Invoice gagal dikirim ke %s", msg["To"])
+        log.exception("Email gagal dikirim ke %s", msg["To"])
 
 
 def _attach_logo(msg: EmailMessage) -> None:
@@ -33,7 +33,6 @@ def _attach_logo(msg: EmailMessage) -> None:
 
 
 def send(to: str, subject: str, body: str, html: str | None = None) -> None:
-    """Kirim email di thread terpisah agar proses pembayaran tidak menunggu SMTP; tanpa SMTP hanya dicatat di log."""
     if not settings.smtp_host:
         log.info("[email belum diatur, tidak terkirim] ke %s | %s\n%s", to, subject, body)
         return

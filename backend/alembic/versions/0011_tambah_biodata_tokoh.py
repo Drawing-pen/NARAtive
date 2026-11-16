@@ -1,9 +1,3 @@
-"""tambah kolom biodata tokoh (alias, jenis kelamin, usia, pekerjaan, kepribadian, latar)
-
-Revision ID: 0011
-Revises: 0010
-Create Date: 2026-10-21
-"""
 from typing import Sequence, Union
 
 from alembic import op

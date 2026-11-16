@@ -1,9 +1,3 @@
-"""buat tabel sensitivity_profiles
-
-Revision ID: 0012
-Revises: 0011
-Create Date: 2026-10-22
-"""
 from typing import Sequence, Union
 
 from alembic import op

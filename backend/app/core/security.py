@@ -74,3 +74,10 @@ def require_tier(minimum: str):
         ensure_tier(user, minimum)
         return user
     return dependency
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Dependency: tolak (403) akun yang bukan admin (R22)."""
+    if user.role != "admin":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Fitur ini khusus admin.")
+    return user

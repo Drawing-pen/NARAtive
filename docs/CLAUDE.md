@@ -38,7 +38,7 @@ NARAtive adalah situs web yang membaca e-book (PDF atau EPUB), menganalisis isin
 | Basis data | MySQL 8 (SQLite untuk tes) |
 | Model | xlm-roberta-base + LoRA, 4 kepala (bahasa kasar, seksual, kekerasan, emosi) di `model/` |
 | LLM | 9router (utama, kompatibel OpenAI) dengan Gemini sebagai cadangan, satu pintu `_generate` di `services/summarizer.py` |
-| Lain | Midtrans (atau simulasi), SMTP untuk email, Docker Compose |
+| Lain | Midtrans (atau simulasi), SMTP untuk email, Tesseract (OCR, lewat PyMuPDF), Docker Compose |
 
 ```
 backend/
@@ -50,28 +50,28 @@ backend/
   app/extraction/             parser PDF dan EPUB: pdf_utils, epub_utils (lama), pdf_markdown,
                               epub_markdown, markdown_utils, reader (pemilih parser)
   app/ml/                     model.py, analyzer.py, lexicon.py
-  app/services/               jobs (antrean analisis), summarizer (satu pintu LLM, rangkuman), heaviness,
+  app/services/               jobs (antrean analisis), reader_jobs (antrean pembacaan PDF dan OCR), summarizer (satu pintu LLM, rangkuman), heaviness,
                               characters dan character_ai (tokoh dan relasi), accounts, verification,
                               password_reset, billing, payments, mailer, email_templates, images,
                               export, sensitivity, collections, summary_local
   app/tools/                  skrip bantu (compare_parsers, tokoh, rescore, rate_heaviness, atur_tier, ...)
-  alembic/versions/           migrasi 0001 sampai 0020
+  alembic/versions/           migrasi 0001 sampai 0021
 frontend/src/
   pages/                      Home, Koleksi, HasilAnalisis, ReadingMode, Summary, Tokoh, Relasi, Sensitivitas,
-                              Profil, Berlangganan, Auth (masuk, daftar, lupa kata sandi), NotFound, Sidebar
+                              Profil, Berlangganan, Bayar, Auth (masuk, daftar, lupa kata sandi), NotFound, Sidebar
   components/                 Header, Footer, Navbar, Logo, BookCard, SeriesCard, dialog dan viewer seri,
-                              CheckoutDialog, badge dan chip, UserAvatar, ReadingBlock, dll.
+                              UpgradeDialog, badge dan chip, UserAvatar, ReadingBlock, dll.
   lib/                        api.js (Axios + token), auth.js, characters.js, content.js, markdown.js, icons.js
   router/index.js
 docs/                         SPEC.md (sumber kebutuhan), CHANGELOG.md (riwayat dan penyimpangan dari SRS/SDD),
                               SRS dan SDD (milik Rana), CLAUDE.md (berkas ini)
 ```
 
-Rute frontend: `/` beranda, `/koleksi`, `/profil`, `/berlangganan`, `/masuk`, `/daftar`, `/lupa-sandi`; ruang kerja satu buku di `/buku/:id` dengan anak `baca`, `rangkuman`, `tokoh`, `relasi`, `sensitivitas`. Halaman buku, koleksi, dan profil butuh login (`meta.requiresAuth`); halaman masuk, daftar, dan lupa kata sandi hanya untuk tamu (`meta.guest`).
+Rute frontend: `/` beranda, `/koleksi`, `/profil`, `/berlangganan`, `/bayar` dan `/bayar/:orderId` (halaman pembayaran), `/masuk`, `/daftar`, `/lupa-sandi`; ruang kerja satu buku di `/buku/:id` dengan anak `baca`, `rangkuman`, `tokoh`, `relasi`, `sensitivitas`. Halaman buku, koleksi, dan profil butuh login (`meta.requiresAuth`); halaman masuk, daftar, dan lupa kata sandi hanya untuk tamu (`meta.guest`).
 
 ## 4. Cara kerja analisis (ringkas; rinciannya di SPEC.md)
 
-**Alur:** unggah PDF atau EPUB, ekstrak teks menjadi bab dan paragraf (blok sampai 900 karakter; parser dipilih `DOCUMENT_PARSER`, bawaan `auto`: EPUB Markdown, PDF parser lama), antre, model menilai tiap paragraf dengan konteks jendela N-1, N, N+1, agregasi dokumen, simpan. File asli tidak disimpan, hanya teksnya.
+**Alur:** unggah PDF atau EPUB; EPUB dibaca saat unggah, PDF dibaca di latar (status `reading`, progres per halaman; halaman tanpa teks dibaca lewat OCR Tesseract di backend, tanpa pilihan atau istilah OCR di UI; `services/reader_jobs.py`, `extraction/ocr.py`); teks diekstrak menjadi bab dan paragraf (blok sampai 900 karakter; parser dipilih `DOCUMENT_PARSER`, bawaan `auto`: EPUB Markdown, PDF parser lama), antre, model menilai tiap paragraf dengan konteks jendela N-1, N, N+1, agregasi dokumen, simpan. File asli tidak disimpan, hanya teksnya.
 
 **Ambang deteksi per paragraf:** bahasa kasar 0,5; seksual 0,5; kekerasan 0,8. Deteksi seksual hibrida: nilai akhir = maksimum skor model dan skor kamus kata eksplisit. Rating dan ambang tidak boleh diubah tanpa diminta Rana.
 

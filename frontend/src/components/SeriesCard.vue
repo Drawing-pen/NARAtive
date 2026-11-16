@@ -7,7 +7,7 @@ const props = defineProps({
 defineEmits(['open', 'edit'])
 
 const pages = computed(() => props.group.books.reduce((sum, d) => sum + d.page_count, 0))
-const busy = computed(() => props.group.books.filter((d) => d.status === 'queued' || d.status === 'analyzing').length)
+const busy = computed(() => props.group.books.filter((d) => ['reading', 'queued', 'analyzing'].includes(d.status)).length)
 const failed = computed(() => props.group.books.filter((d) => d.status === 'failed').length)
 </script>
 
@@ -30,7 +30,7 @@ const failed = computed(() => props.group.books.filter((d) => d.status === 'fail
             <button type="button" class="cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-0" :aria-label="`Buka seri ${group.name}, ${group.books.length} buku`" @click="$emit('open', group)">{{ group.name }}</button>
           </h3>
           <p class="text-xs text-muted">
-            <template v-if="busy">{{ busy }} buku sedang dianalisis</template>
+            <template v-if="busy">{{ busy }} buku sedang diproses</template>
             <template v-else-if="failed">{{ failed }} buku gagal dianalisis</template>
             <template v-else>Semua buku selesai dianalisis</template>
           </p>

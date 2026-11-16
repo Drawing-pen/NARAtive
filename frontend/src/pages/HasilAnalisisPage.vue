@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { errorMessage } from '@/lib/api'
 import { hasTier } from '@/lib/auth'
+import { showUpgrade } from '@/lib/upgrade'
 import { RATINGS, UPCOMING, formatDate, num } from '@/lib/content'
 import AuthImage from '@/components/AuthImage.vue'
 import PictureControls from '@/components/PictureControls.vue'
@@ -18,11 +19,30 @@ const missing = ref(false)
 const error = ref('')
 let timer = null
 
+const breakdown = ref(null)
+const breakdownLoading = ref(false)
+const breakdownError = ref('')
+let breakdownRequested = false
+
+async function ensureBreakdown() {
+  if (breakdownRequested || !hasTier('middle')) return
+  breakdownRequested = true
+  breakdownLoading.value = true
+  try {
+    breakdown.value = (await api.get(`/documents/${props.id}/rating`)).data
+  } catch (e) {
+    breakdownError.value = errorMessage(e, 'Gagal memuat rincian rating.')
+  } finally {
+    breakdownLoading.value = false
+  }
+}
+
 async function load(silent = false) {
   try {
     const { data } = await api.get(`/documents/${props.id}`)
     doc.value = data
     error.value = ''
+    if (data.status === 'done') ensureBreakdown()
   } catch (e) {
     if (e.response?.status === 404) missing.value = true
     else if (!silent) error.value = errorMessage(e, 'Gagal mengambil hasil analisis.')
@@ -104,7 +124,7 @@ function estimate(seconds) {
 onMounted(() => {
   load()
   timer = setInterval(() => {
-    if (['queued', 'analyzing'].includes(doc.value?.status)) load(true)
+    if (['reading', 'queued', 'analyzing'].includes(doc.value?.status)) load(true)
   }, 3000)
 })
 onBeforeUnmount(() => clearInterval(timer))
@@ -210,11 +230,11 @@ onBeforeUnmount(() => clearInterval(timer))
                 <Icon icon="lucide:scroll-text" class="size-4.5" />
                 Rangkuman
               </RouterLink>
-              <RouterLink v-if="!hasTier('high')" :to="{ name: 'plans' }" class="btn btn-outline w-full" title="Unduh PDF khusus High Tier">
+              <button v-if="!hasTier('high')" type="button" data-test="export-locked" class="btn btn-outline w-full" title="Unduh PDF khusus High Tier" @click="showUpgrade({ tier: 'high', message: 'Fitur ini khusus pengguna High Tier.' })">
                 <Icon icon="lucide:lock" class="size-4" />
                 Unduh PDF
                 <TierChip tier="high" />
-              </RouterLink>
+              </button>
               <button v-else class="btn btn-outline w-full" :disabled="exporting" @click="downloadPdf">
                 <Icon :icon="exporting ? 'lucide:loader-circle' : 'lucide:download'" class="size-4" :class="{ 'animate-spin': exporting }" />
                 {{ exporting ? 'Menyusun PDF…' : 'Unduh hasil (PDF)' }}
@@ -225,8 +245,22 @@ onBeforeUnmount(() => clearInterval(timer))
         </div>
       </section>
 
+      <!-- Sedang dibaca -->
+      <section v-if="doc.status === 'reading'" class="card grid place-items-center gap-4 px-6 py-16 text-center">
+        <Icon icon="lucide:loader-circle" class="size-12 animate-spin text-navy" />
+        <div class="space-y-1">
+          <h2 class="text-2xl font-semibold">Membaca berkas</h2>
+          <p class="max-w-md text-sm text-muted">
+            Membaca halaman {{ doc.read_pages }} dari {{ doc.page_count }}. Halaman ini memperbarui diri otomatis, jadi kamu boleh menunggu di sini.
+          </p>
+        </div>
+        <div class="h-2 w-full max-w-md overflow-hidden rounded-full bg-sand" role="progressbar" aria-label="Progres membaca berkas" :aria-valuenow="doc.read_pages" aria-valuemin="0" :aria-valuemax="doc.page_count">
+          <div class="h-full rounded-full bg-amber transition-all duration-500" :style="{ width: `${doc.page_count ? Math.min(100, Math.round((doc.read_pages / doc.page_count) * 100)) : 0}%` }" />
+        </div>
+      </section>
+
       <!-- Sedang diproses -->
-      <section v-if="doc.status === 'queued' || doc.status === 'analyzing'" class="card grid place-items-center gap-4 px-6 py-16 text-center">
+      <section v-else-if="doc.status === 'queued' || doc.status === 'analyzing'" class="card grid place-items-center gap-4 px-6 py-16 text-center">
         <Icon icon="lucide:loader-circle" class="size-12 animate-spin text-navy" />
         <div class="space-y-1">
           <h2 class="text-2xl font-semibold">{{ doc.status === 'queued' ? 'Menunggu giliran' : 'Sedang diproses' }}</h2>
@@ -240,8 +274,8 @@ onBeforeUnmount(() => clearInterval(timer))
       <section v-else-if="doc.status === 'failed'" class="card grid place-items-center gap-4 px-6 py-14 text-center">
         <Icon icon="lucide:circle-x" class="size-12 text-danger" />
         <div class="space-y-1">
-          <h2 class="text-2xl font-semibold">Analisis gagal</h2>
-          <p class="max-w-md text-sm text-muted">Sistem tidak berhasil memproses naskah ini. Unggah ulang file-nya dari halaman koleksi.</p>
+          <h2 class="text-2xl font-semibold">{{ doc.failure_reason ? 'Berkas tidak dapat diproses' : 'Analisis gagal' }}</h2>
+          <p class="max-w-md text-sm text-muted">{{ doc.failure_reason || 'Sistem tidak berhasil memproses naskah ini. Unggah ulang file-nya dari halaman koleksi.' }}</p>
         </div>
         <RouterLink :to="{ name: 'library' }" class="btn btn-primary btn-sm">Ke koleksi</RouterLink>
       </section>
@@ -278,19 +312,38 @@ onBeforeUnmount(() => clearInterval(timer))
             </div>
             <TierChip tier="middle" />
           </div>
-          <div class="grid gap-4 sm:grid-cols-3">
-            <div v-for="d in ['Kekerasan', 'Konten seksual', 'Bahasa kasar']" :key="d" class="space-y-2 rounded-xl bg-paper p-4">
-              <div class="flex items-center justify-between text-sm font-semibold text-navy">
-                <span>{{ d }}</span>
-                <span class="text-muted">– %</span>
-              </div>
-              <div class="h-2 rounded-full bg-sand" />
-            </div>
-          </div>
-          <p class="flex items-center gap-2 rounded-xl bg-paper p-4 text-sm text-muted">
+
+          <p v-if="!hasTier('middle')" class="flex flex-wrap items-center gap-2 rounded-xl bg-paper p-4 text-sm text-muted">
             <Icon icon="lucide:lock" class="size-4 shrink-0 text-lavender" />
-            Penjelasan kenapa buku ini mendapat rating tersebut akan muncul di sini.
+            Rincian per dimensi dan alasan rating tersedia di Middle Tier.
+            <RouterLink :to="{ name: 'plans' }" class="font-semibold text-navy underline decoration-amber decoration-2 underline-offset-4">Lihat paket</RouterLink>
           </p>
+          <p v-else-if="breakdownLoading" class="flex items-center gap-2 text-sm text-muted">
+            <Icon icon="lucide:loader-circle" class="size-4 animate-spin" />
+            Memuat rincian…
+          </p>
+          <p v-else-if="breakdownError" role="alert" class="rounded-lg bg-danger/10 px-3 py-2.5 text-sm text-danger">{{ breakdownError }}</p>
+          <template v-else-if="breakdown">
+            <div class="grid gap-4 sm:grid-cols-3">
+              <div v-for="d in breakdown.dimensions" :key="d.key" class="space-y-2 rounded-xl bg-paper p-4">
+                <div class="flex items-center justify-between text-sm font-semibold text-navy">
+                  <span>{{ d.label }}</span>
+                  <span class="tabular-nums">{{ num(d.percent) }}%</span>
+                </div>
+                <div class="h-2 overflow-hidden rounded-full bg-sand" role="progressbar" :aria-label="d.label" :aria-valuenow="d.percent" aria-valuemin="0" aria-valuemax="100">
+                  <div data-test="dimension-bar" class="h-full rounded-full bg-navy" :style="{ width: `${Math.min(100, d.percent)}%` }" />
+                </div>
+                <p class="text-xs text-muted">{{ d.paragraphs }} paragraf</p>
+              </div>
+            </div>
+            <ul class="space-y-2 rounded-xl bg-paper p-4 text-sm leading-relaxed text-navy/90">
+              <li v-for="reason in breakdown.reasons" :key="reason" class="flex items-start gap-2">
+                <Icon icon="lucide:info" class="mt-0.5 size-4 shrink-0 text-lavender" />
+                <span>{{ reason }}</span>
+              </li>
+            </ul>
+            <p class="text-xs text-muted">{{ breakdown.note }}</p>
+          </template>
         </section>
 
         <!-- Fitur lanjutan -->
@@ -300,7 +353,7 @@ onBeforeUnmount(() => clearInterval(timer))
             <h2 id="lanjutan" class="text-xl font-semibold">Kenali ceritanya lebih dalam</h2>
           </div>
           <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            <article v-for="f in UPCOMING" :key="f.uc" class="card flex flex-col gap-4 p-5">
+            <article v-for="f in UPCOMING" :key="f.uc" class="card flex flex-col gap-4 p-5 sm:max-lg:odd:last:col-span-2">
               <div class="flex items-center justify-between gap-2">
                 <span class="grid size-11 place-items-center rounded-xl bg-sand text-navy"><Icon :icon="f.icon" class="size-6" /></span>
                 <TierChip :tier="f.tier" />

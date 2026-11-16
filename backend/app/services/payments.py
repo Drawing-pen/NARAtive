@@ -1,8 +1,3 @@
-"""Gateway pembayaran Virtual Account.
-
-Tanpa MIDTRANS_SERVER_KEY dipakai mode simulasi: nomor VA dibuat lokal dan pembayaran "dikonfirmasi" lewat
-endpoint simulasi. Dengan kunci itu, VA dibuat lewat Core API Midtrans dan status datang lewat notifikasi webhook.
-"""
 import base64
 import hashlib
 import hmac
@@ -68,7 +63,6 @@ def _call(path: str, body: dict | None = None) -> dict:
 
 
 def create_va(order_id: str, amount: int, bank: str) -> str:
-    """Buat nomor Virtual Account untuk satu pesanan."""
     if provider() == "unavailable":
         raise PaymentUnavailable("Pembayaran belum tersedia.")
     if provider() == "simulated":
@@ -89,8 +83,22 @@ def create_va(order_id: str, amount: int, bank: str) -> str:
     return str(va)
 
 
+def fetch_status(order_id: str) -> dict:
+    token = base64.b64encode(f"{settings.midtrans_server_key}:".encode()).decode()
+    req = urllib.request.Request(
+        _base_url() + f"/v2/{order_id}/status",
+        headers={"Accept": "application/json", "Authorization": f"Basic {token}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res:
+            return json.load(res)
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        log.warning("Midtrans status %s gagal: %s", order_id, e)
+        raise PaymentError("Layanan pembayaran tidak merespons.") from e
+
+
 def cancel_va(order_id: str) -> None:
-    """Batalkan VA di gateway (UC-07, alur alternatif). Gagal membatalkan tidak menggagalkan pembatalan di sistem."""
     if provider() == "midtrans":
         try:
             _call(f"/v2/{order_id}/cancel")

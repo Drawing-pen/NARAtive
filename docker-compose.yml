@@ -16,12 +16,25 @@ services:
       timeout: 5s
       retries: 20
 
+  9router:
+    image: decolua/9router:latest
+    restart: unless-stopped
+    volumes:
+      - router_data:/app/data
+    ports:
+      - "127.0.0.1:20128:20128"
+
   backend:
     build: ./backend
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      9router:
+        condition: service_started
+    env_file:
+      - path: backend/.env
+        required: false
     environment:
       DATABASE_URL: mysql+pymysql://narative:${DB_PASSWORD:-narative}@db:3306/narative
       SECRET_KEY: ${SECRET_KEY:-narative-dev-secret-ganti-kalau-dipublikasikan-32-karakter}
@@ -32,21 +45,12 @@ services:
       MODEL_URL: ${MODEL_URL:-https://huggingface.co/Roena33/narative-model/resolve/main/model_best.pt}
       UPLOAD_DIR: /app/uploads
       DEV_UNLOCK_ALL_TIERS: ${DEV_UNLOCK_ALL_TIERS:-false}
-      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
-      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-NARAtive <no-reply@narative.local>}
-      ROUTER_BASE_URL: ${ROUTER_BASE_URL:-}
-      ROUTER_API_KEY: ${ROUTER_API_KEY:-}
-      ROUTER_MODEL: ${ROUTER_MODEL:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
-      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
-      GEMINI_CHARACTER_MODEL: ${GEMINI_CHARACTER_MODEL:-}
+      ROUTER_BASE_URL: ${ROUTER_BASE_URL:-http://9router:20128/v1}
       CHARACTER_PARALLEL: ${CHARACTER_PARALLEL:-3}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-ind+eng}
+      OCR_DPI: ${OCR_DPI:-200}
     volumes:
       - ./model:/model
       - uploads:/app/uploads
@@ -69,3 +73,4 @@ volumes:
   db_data:
   uploads:
   hf_cache:
+  router_data:

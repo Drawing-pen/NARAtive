@@ -71,6 +71,7 @@ export async function resetPassword(email, code, newPassword) {
 
 // backend menamai paket gratis "free", UI menyebutnya "standard"
 export const tierKey = () => (auth.user?.tier === 'free' || !auth.user?.tier ? 'standard' : auth.user.tier)
+export const isAdmin = () => auth.user?.role === 'admin'
 export const isHighTier = () => tierKey() === 'high'
 const TIER_RANK = { standard: 0, middle: 1, high: 2 }
 export const hasTier = (minimum) => TIER_RANK[tierKey()] >= TIER_RANK[minimum]

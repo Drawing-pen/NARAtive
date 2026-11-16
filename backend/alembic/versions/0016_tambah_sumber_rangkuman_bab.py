@@ -1,9 +1,3 @@
-"""tambah chapters.summary_source (ai atau local)
-
-Revision ID: 0016
-Revises: 0015
-Create Date: 2026-10-26
-"""
 from typing import Sequence, Union
 
 from alembic import op

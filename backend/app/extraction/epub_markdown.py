@@ -143,7 +143,6 @@ class _MdBlocks(HTMLParser):
 
 
 def _pack_blocks(items: list[tuple]) -> list[mdu.Block]:
-    """items: (jenis, markdown, teks polos, level). Paragraf pendek berurutan dikemas seperti `epub_utils._pack`."""
     out: list[mdu.Block] = []
     mds: list[str] = []
     plains: list[str] = []
@@ -182,7 +181,6 @@ def _pack_blocks(items: list[tuple]) -> list[mdu.Block]:
 
 
 def read_epub_markdown(path: str) -> tuple[int, list[str], list[tuple[int, mdu.Block]]]:
-    """Return (perkiraan halaman, judul bab, [(nomor bab, Block)]). Aturan bab sama dengan `read_epub`."""
     try:
         z = zipfile.ZipFile(path)
     except zipfile.BadZipFile:

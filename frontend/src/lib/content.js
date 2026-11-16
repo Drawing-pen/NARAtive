@@ -45,6 +45,7 @@ export const EMOTIONS = {
 }
 
 export const STATUS = {
+  reading: { label: 'Membaca berkas', cls: 'bg-amber/35 text-navy', icon: 'lucide:loader-circle', spin: true },
   queued: { label: 'Menunggu antrean', cls: 'bg-sand text-muted', icon: 'lucide:hourglass' },
   analyzing: { label: 'Sedang dianalisis', cls: 'bg-amber/35 text-navy', icon: 'lucide:loader-circle', spin: true },
   done: { label: 'Selesai dianalisis', cls: 'bg-lavender/20 text-navy', icon: 'lucide:circle-check' },
@@ -103,6 +104,15 @@ export const RELATION_TYPES = {
 }
 // nama lama sebelum jenis hubungan dirinci; tetap terbaca untuk buku yang belum dideteksi ulang
 export const RELATION_ALIAS = { akrab: 'kenalan', konflik: 'musuh' }
+
+export function initials(name) {
+  return (name ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('')
+}
 
 export function relationType(type) {
   const key = RELATION_ALIAS[type] ?? type

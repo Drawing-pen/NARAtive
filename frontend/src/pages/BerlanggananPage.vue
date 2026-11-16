@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import api, { errorMessage } from '@/lib/api'
-import { isLoggedIn, refreshUser } from '@/lib/auth'
+import { isLoggedIn } from '@/lib/auth'
 import { formatDate, rupiah } from '@/lib/content'
-import CheckoutDialog from '@/components/CheckoutDialog.vue'
 import TierChip from '@/components/TierChip.vue'
 
 const plans = [
@@ -30,7 +30,7 @@ const overview = ref(null)
 const transactions = ref([])
 const loading = ref(isLoggedIn())
 const error = ref('')
-const checkout = ref(null)    // { request } atau { resume }
+const router = useRouter()
 const quantity = ref(PACKS[0])
 
 const paid = computed(() => overview.value?.paid_tier ?? 'free')
@@ -54,13 +54,10 @@ async function load() {
 }
 
 function buyPlan(plan) {
-  checkout.value = { request: { kind: 'upgrade', plan, amount: overview.value.upgrade_prices[plan] } }
+  router.push({ name: 'checkout', query: { paket: plan } })
 }
 function buyChecks() {
-  checkout.value = { request: { kind: 'pay_per_check', quantity: quantity.value, amount: overview.value.pay_per_check_price * quantity.value } }
-}
-async function onChanged() {
-  await Promise.all([load(), refreshUser()])
+  router.push({ name: 'checkout', query: { jenis: 'analisis', jumlah: quantity.value } })
 }
 
 function action(p) {
@@ -224,15 +221,5 @@ onMounted(load)
         </div>
       </article>
     </section>
-
-    <CheckoutDialog
-      v-if="checkout"
-      :request="checkout.request ?? null"
-      :resume="checkout.resume ?? null"
-      :banks="overview.banks"
-      :provider="overview.provider"
-      @close="checkout = null"
-      @changed="onChanged"
-    />
   </div>
 </template>

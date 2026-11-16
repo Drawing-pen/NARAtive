@@ -7,6 +7,7 @@ const changePassword = vi.fn()
 const deleteAccount = vi.fn()
 const refreshUser = vi.fn()
 const replace = vi.fn()
+const push = vi.fn()
 const route = { hash: '' }
 const USER = { name: 'Rana', email: 'rana@example.com', created_at: '2026-10-01T08:00:00', tier: 'free' }
 
@@ -24,7 +25,7 @@ vi.mock('@/lib/auth', async () => {
   refreshUser: (...args) => refreshUser(...args),
   }
 })
-vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ replace }) }))
+vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ replace, push }) }))
 
 import { auth } from '@/lib/auth'
 import ProfilPage from '@/pages/ProfilPage.vue'
@@ -56,7 +57,6 @@ async function open() {
       stubs: {
         Icon: true,
         RouterLink: { template: '<a><slot /></a>' },
-        CheckoutDialog: { props: ['resume'], template: '<div data-test="dialog">{{ resume?.order_id }}</div>' },
       },
     },
   })
@@ -67,7 +67,7 @@ async function open() {
 const button = (w, text) => w.findAll('button').find((b) => b.text().includes(text))
 
 beforeEach(() => {
-  for (const fn of [get, renameAccount, changePassword, deleteAccount, refreshUser, replace]) fn.mockReset()
+  for (const fn of [get, renameAccount, changePassword, deleteAccount, refreshUser, replace, push]) fn.mockReset()
   route.hash = ''
   auth.user = { ...USER }
   serve()
@@ -137,13 +137,13 @@ describe('payment history', () => {
     expect(rows[1].text()).toContain('Kedaluwarsa')
   })
 
-  it('offers to continue only pending payments and opens the dialog', async () => {
+  it('offers to continue only pending payments and opens the payment page', async () => {
     serve(OVERVIEW, [TX(), TX({ order_id: 'NAR-1-wait', status: 'pending' })])
     const w = await open()
     expect(w.findAll('button').filter((b) => b.text().includes('Lanjutkan bayar'))).toHaveLength(1)
     expect(w.text()).toContain('1 menunggu')
     await button(w, 'Lanjutkan bayar').trigger('click')
-    expect(w.find('[data-test=dialog]').text()).toBe('NAR-1-wait')
+    expect(push).toHaveBeenCalledWith({ name: 'order', params: { orderId: 'NAR-1-wait' } })
   })
 })
 

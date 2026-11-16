@@ -26,6 +26,9 @@ STANDALONE = re.compile(
     re.IGNORECASE,
 )
 
+TOC_TITLE = re.compile(r"^(daftar isi|contents|table of contents)\b", re.IGNORECASE)
+ENDS_WITH_NUMBER = re.compile(r"\d{1,4}\s*$")
+
 URLISH = re.compile(
     r"(?:https?://)?(?:www\.)?[\w-]+(?:\.[\w-]+)*\.(?:blogspot\.com|wordpress\.com|com|net|org|co\.id)\b\S*",
     re.IGNORECASE,
@@ -277,6 +280,10 @@ def _open(path: str):
         return pymupdf.open(stream=f.read(), filetype="pdf")
 
 
+def _real_titles(titles: list[str]) -> int:
+    return sum(1 for t in titles if t != "Pembuka" and not TOC_TITLE.match(t))
+
+
 def read_pdf(path: str) -> tuple[int, list[str], list[tuple[int, str]]]:
     with _open(path) as pdf:
         page_count = len(pdf)
@@ -290,12 +297,12 @@ def read_pdf(path: str) -> tuple[int, list[str], list[tuple[int, str]]]:
         else:
             titles, paras = split_chapters(_join_pages(pages))
             method = "judul di teks"
-            if len(titles) < 2:
+            if _real_titles(titles) < 2:
                 big = _big_lines(pdf)
                 if big:
                     titles, paras = split_chapters(_join_pages(pages), extra=big)
                     method = "ukuran huruf"
-            if len(titles) < 2 and page_count > PAGES_PER_SECTION + 10:
+            if _real_titles(titles) < 2 and page_count > PAGES_PER_SECTION + 10:
                 sections: set[str] = set()
                 for start in range(0, page_count, PAGES_PER_SECTION):
                     label = f"Halaman {start + 1}\u2013{min(start + PAGES_PER_SECTION, page_count)}"
@@ -313,6 +320,7 @@ def split_chapters(text: str, min_chars: int = 20, extra: set[str] | None = None
     titles: list[str] = []
     found: list[tuple[int, str]] = []   
     last_heading_at = -1 
+    in_toc = False
 
     def flush(buf: list[str]):
         merged = clean_text(restore_dropcap(" ".join(buf).lstrip()))
@@ -332,6 +340,9 @@ def split_chapters(text: str, min_chars: int = 20, extra: set[str] | None = None
                 buf.append(lines[i])
                 i += 1
                 continue
+            if in_toc and m and not HEADING.match(line) and i > 0 and ENDS_WITH_NUMBER.search(lines[i - 1]):
+                i += 1
+                continue
             run = 0   
             while i + run < len(lines) and len(lines[i + run]) <= 80 and (HEADING.match(lines[i + run]) or STANDALONE.match(lines[i + run])):
                 run += 1
@@ -348,6 +359,7 @@ def split_chapters(text: str, min_chars: int = 20, extra: set[str] | None = None
                 title += " \u2014 " + lines[i]
                 i += 1
             title = clean_text(title) or f"Bab {len(titles) + 1}"   
+            in_toc = bool(TOC_TITLE.match(title))
             if not titles or titles[-1] != title or len(found) != last_heading_at:
                 titles.append(title)
             last_heading_at = len(found)

@@ -1,12 +1,11 @@
-"""Batas tiap tingkatan akun dan harga. Harga di bawah masih angka sementara (di SRS: TBA), ubah di sini."""
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Limits:
-    max_pages: int | None      # halaman per unggahan; None = tanpa batas
-    monthly: int | None        # analisis per bulan
-    max_active: int | None     # e-book aktif di koleksi
+    max_pages: int | None
+    monthly: int | None
+    max_active: int | None
 
 
 LIMITS = {
@@ -16,9 +15,9 @@ LIMITS = {
 }
 
 PLAN_LABEL = {"free": "Standard", "middle": "Middle", "high": "High"}
-UPGRADE_PRICE = {"middle": 29_000, "high": 59_000}    # rupiah per periode
+UPGRADE_PRICE = {"middle": 29_000, "high": 59_000}
 PERIOD_DAYS = 30
-PAY_PER_CHECK_PRICE = 5_000                           # rupiah per analisis tambahan
-PAY_PER_CHECK_MAX = 10                                # analisis per pembelian
+PAY_PER_CHECK_PRICE = 5_000
+PAY_PER_CHECK_MAX = 10
 BANKS = ("bca", "bni", "bri", "permata")
 VA_TTL_HOURS = 24

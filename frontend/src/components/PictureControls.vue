@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import api, { errorMessage } from '@/lib/api'
 import { hasTier } from '@/lib/auth'
+import { showUpgrade } from '@/lib/upgrade'
 
 const MAX_BYTES = 2 * 1024 * 1024
 
@@ -47,14 +48,16 @@ async function pick(event) {
 async function reset() {
   if (await run(() => api.delete(props.path))) emit('changed', false)
 }
+
+const HIGH_ONLY = { tier: 'high', message: 'Fitur ini khusus pengguna High Tier.' }
 </script>
 
 <template>
   <div class="space-y-2">
-    <RouterLink v-if="!hasTier('high')" :to="{ name: 'plans' }" class="btn btn-outline btn-sm w-full" title="Khusus High Tier">
+    <button v-if="!hasTier('high')" type="button" data-test="upgrade" class="btn btn-outline btn-sm w-full" title="Khusus High Tier" @click="showUpgrade(HIGH_ONLY)">
       <Icon icon="lucide:lock" class="size-4" />
       <span v-if="!compact">{{ label }}</span>
-    </RouterLink>
+    </button>
     <div v-else class="flex gap-2">
       <button type="button" class="btn btn-outline btn-sm flex-1" :disabled="busy" :aria-label="label" :title="label" @click="input.click()">
         <Icon :icon="busy ? 'lucide:loader-circle' : 'lucide:image-up'" class="size-4" :class="{ 'animate-spin': busy }" />

@@ -17,7 +17,9 @@ request_log = logging.getLogger("uvicorn.error")
 
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MAX_CHARS = 120_000          
-CHAPTER_CHARS = 6_000       
+LONG_CHAPTER_CHARS = 30_000
+MAX_PARTS = 12
+CHAPTER_CHARS = 6_000
 BATCH_CHARS = 90_000         
 BATCH_MAX_CHAPTERS = 20
 MAX_SINGLE_FALLBACK = 3      
@@ -212,7 +214,6 @@ def _router_generate(prompt: str, system: str, schema: dict | None, temperature:
 
 def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, temperature: float = 0.3, max_tokens: int = 2048,
               prefer: str = "", purpose: str = "") -> str:
-    """9router lebih dulu, Gemini sebagai cadangan (13A R10). Pemanggil tidak perlu tahu penyedianya."""
     global _router_blocked_until
     failure = None
     if router_active():
@@ -331,6 +332,38 @@ BATCH_SCHEMA = {
 }
 
 
+def _segments(text: str) -> list[str]:
+    parts = max(2, min(MAX_PARTS, -(-len(text) // CHAPTER_CHARS)))
+    target = len(text) / parts
+    out, current, size = [], [], 0
+    for paragraph in text.split("\n\n"):
+        current.append(paragraph)
+        size += len(paragraph) + 2
+        if size >= target and len(out) < parts - 1:
+            out.append("\n\n".join(current))
+            current, size = [], 0
+    if current:
+        out.append("\n\n".join(current))
+    return out
+
+
+def _long_chapter_summary(title: str, text: str) -> str:
+    segments = _segments(text)
+    items = [(i, f"{title} (bagian {i} dari {len(segments)})", _excerpt(seg)) for i, seg in enumerate(segments, start=1)]
+    got: dict[int, str] = {}
+    for batch in _batches(items):
+        got.update(_summarize_batch(batch))
+    parts = [f"Bagian {i}: {got[i]}" for i in sorted(got)]
+    if not parts:
+        raise SummaryError("Tidak ada bagian bab yang berhasil dirangkum.")
+    return _generate(
+        f"Berikut rangkuman bagian-bagian berurutan dari bab berjudul \"{title}\". Susun satu rangkuman bab (5 sampai 8 kalimat) "
+        f"yang mengalir dari awal sampai akhir: peristiwa utama, tokoh yang terlibat, dan perubahannya.\n\n"
+        f"<bagian-bab>\n{chr(10).join(parts)[:MAX_CHARS]}\n</bagian-bab>",
+        purpose="rangkuman bab (gabungan)",
+    )
+
+
 def _excerpt(text: str) -> str:
     if len(text) <= CHAPTER_CHARS:
         return text
@@ -418,10 +451,13 @@ def run(doc_id: int) -> None:
             ch.summary, ch.summary_source = summary_local.chapter_summary(plain_parts.get(number, [])), "local"
 
         pending = []
+        long_pending = []
         for ch in doc.chapters:
             if ch.summary and ch.summary != UNAVAILABLE and ch.summary_source != "local":
                 continue
-            if texts[ch.number].strip():
+            if len(texts[ch.number]) > LONG_CHAPTER_CHARS:
+                long_pending.append((ch.number, ch.title, texts[ch.number]))
+            elif texts[ch.number].strip():
                 pending.append((ch.number, ch.title, _excerpt(texts[ch.number])))
             else:
                 ch.summary, ch.summary_source = UNAVAILABLE, None
@@ -463,6 +499,30 @@ def run(doc_id: int) -> None:
                 except SummaryError as e:
                     log.warning("Bab %s dokumen %s: %s", number, doc_id, e)
                     use_local(number)
+            db.commit()
+
+        for number, title, text in long_pending:
+            if quota_out:
+                use_local(number)
+                continue
+            try:
+                try:
+                    summary = _long_chapter_summary(title, text)
+                except SafetyBlock:
+                    log.warning("Bab panjang %s dokumen %s ditahan Gemini, mencoba ulang dengan paragraf sensitif diganti penanda.", number, doc_id)
+                    strict = strict_parts.get(number, [])
+                    if not _has_content(strict):
+                        raise
+                    summary = _long_chapter_summary(title, "\n\n".join(strict))
+                by_number[number].summary, by_number[number].summary_source = summary, "ai"
+            except QuotaError:
+                quota_out = True
+                use_local(number)
+            except SummaryError as e:
+                log.warning("Bab panjang %s dokumen %s: %s", number, doc_id, e)
+                if _is_config_error(e):
+                    raise
+                use_local(number)
             db.commit()
 
         usable = [ch for ch in doc.chapters if ch.summary and ch.summary != UNAVAILABLE]

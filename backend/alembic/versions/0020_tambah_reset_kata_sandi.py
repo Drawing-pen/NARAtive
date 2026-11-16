@@ -1,9 +1,3 @@
-"""tambah tabel password_resets (lupa kata sandi)
-
-Revision ID: 0020
-Revises: 0019
-Create Date: 2026-11-02
-"""
 from typing import Sequence, Union
 
 from alembic import op

@@ -1,14 +1,17 @@
 <script setup>
+import { computed } from 'vue'
 import { formatDate } from '@/lib/content'
 import AuthImage from '@/components/AuthImage.vue'
 import RatingBadge from '@/components/RatingBadge.vue'
 import StatusChip from '@/components/StatusChip.vue'
 
-defineProps({
+const props = defineProps({
   doc: { type: Object, required: true },
   number: { type: Number, default: 0 },    // urutan dalam seri; 0 = buku lepas
 })
 defineEmits(['delete'])
+
+const percent = computed(() => (props.doc.page_count ? Math.min(100, Math.round((props.doc.read_pages / props.doc.page_count) * 100)) : 0))
 </script>
 
 <template>
@@ -25,7 +28,6 @@ defineEmits(['delete'])
     <div class="flex flex-1 flex-col gap-3 px-1.5 pt-3 pb-1.5">
       <div class="space-y-1">
         <h3 class="line-clamp-2 text-base leading-snug font-semibold transition group-hover:underline decoration-amber decoration-2 underline-offset-4" :title="doc.title">
-          <!-- tautan "membentang": area klik seluruh kartu; tombol di bawah tetap bisa diklik sendiri (z-10) -->
           <RouterLink :to="{ name: 'document', params: { id: doc.id } }" class="outline-none after:absolute after:inset-0 after:z-0">{{ doc.title }}</RouterLink>
         </h3>
         <p class="text-xs text-muted">Diunggah {{ formatDate(doc.created_at) }}</p>
@@ -34,6 +36,13 @@ defineEmits(['delete'])
       <div class="flex flex-wrap items-center gap-2">
         <StatusChip :status="doc.status" />
         <RatingBadge :rating="doc.rating" />
+      </div>
+
+      <div v-if="doc.status === 'reading'" class="space-y-1.5">
+        <div class="h-1.5 overflow-hidden rounded-full bg-sand" role="progressbar" aria-label="Progres membaca berkas" :aria-valuenow="doc.read_pages" aria-valuemin="0" :aria-valuemax="doc.page_count">
+          <div data-test="read-bar" class="h-full rounded-full bg-amber transition-all duration-500" :style="{ width: `${percent}%` }" />
+        </div>
+        <p class="text-xs text-muted">Membaca halaman {{ doc.read_pages }} dari {{ doc.page_count }}</p>
       </div>
 
       <div class="relative z-10 mt-auto flex flex-wrap items-center gap-2 pt-1">
@@ -47,11 +56,11 @@ defineEmits(['delete'])
             Baca
           </RouterLink>
         </template>
-        <RouterLink v-else-if="doc.status === 'queued' || doc.status === 'analyzing'" :to="{ name: 'document', params: { id: doc.id } }" class="btn btn-quiet btn-sm">
+        <RouterLink v-else-if="['reading', 'queued', 'analyzing'].includes(doc.status)" :to="{ name: 'document', params: { id: doc.id } }" class="btn btn-quiet btn-sm">
           <Icon icon="lucide:hourglass" class="size-4" />
           Lihat progres
         </RouterLink>
-        <span v-else class="text-sm text-danger">Analisis gagal. Unggah ulang file ini.</span>
+        <span v-else class="text-sm text-danger">{{ doc.failure_reason || 'Analisis gagal. Unggah ulang file ini.' }}</span>
         <button class="btn btn-quiet btn-sm ml-auto !px-2.5 hover:!bg-danger/10 hover:!text-danger" :aria-label="`Hapus ${doc.title}`" title="Hapus dari koleksi" @click="$emit('delete', doc)">
           <Icon icon="lucide:trash-2" class="size-4" />
         </button>

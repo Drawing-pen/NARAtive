@@ -142,6 +142,8 @@ class Document(Base):
     summary_status: Mapped[str | None] = mapped_column(String(10), nullable=True)    
     characters_status: Mapped[str | None] = mapped_column(String(10), nullable=True) 
     cover_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    read_pages: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     owner: Mapped["User"] = relationship(back_populates="documents")
 

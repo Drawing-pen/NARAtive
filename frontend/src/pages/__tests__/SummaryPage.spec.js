@@ -56,11 +56,12 @@ beforeEach(() => {
 })
 
 describe('rangkuman sebagian (partial)', () => {
-  it('menampilkan hasil dengan catatan bahwa sebagian bab dirangkum sederhana', async () => {
+  it('menampilkan hasil tanpa catatan apa pun', async () => {
     serve(summary('partial'))
     const w = await open()
     expect(w.text()).toContain('Ringkasan seluruh buku.')
-    expect(w.text()).toContain('Sebagian bab dirangkum sederhana tanpa AI karena layanan Gemini sedang dibatasi atau menolak teks.')
+    expect(w.text()).not.toContain('dirangkum sederhana')
+    expect(w.find('[role="status"]').exists()).toBe(false)
   })
 
   it('memberi label hanya pada bab bersumber lokal', async () => {
@@ -73,22 +74,11 @@ describe('rangkuman sebagian (partial)', () => {
     expect(articles[2].text()).not.toContain('Ringkasan sederhana (tanpa AI)')
   })
 
-  it('tombol Lanjutkan dengan AI memulai ulang prosesnya', async () => {
-    serve(summary('partial'))
-    post.mockResolvedValue({ data: summary('running', { done_chapters: 1, overall: null }) })
-    const w = await open()
-    await buttonByText(w, 'Lanjutkan dengan AI').trigger('click')
-    await flushPromises()
-    expect(post).toHaveBeenCalledWith('/documents/1/summary')
-    expect(w.text()).toContain('Sedang membuat rangkuman')
-  })
-
-  it('menyembunyikan tombol lanjutkan bagi yang tidak berhak membuat rangkuman', async () => {
-    allowed.middle = false
+  it('tidak menampilkan tombol Lanjutkan dengan AI', async () => {
     serve(summary('partial'))
     const w = await open()
-    expect(w.text()).toContain('Ringkasan seluruh buku.')
     expect(buttonByText(w, 'Lanjutkan dengan AI')).toBeUndefined()
+    expect(buttonByText(w, 'Buat ulang')).toBeTruthy()
   })
 })
 

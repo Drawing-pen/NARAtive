@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     router_model: str = ""
     router_timeout: float = 120.0
     character_parallel: int = 3
+    max_upload_mb: int = 100
+    ocr_enabled: bool = True
+    ocr_languages: str = "ind+eng"
+    ocr_dpi: int = 200
+    tessdata_dir: str = ""
     seconds_per_paragraph: float = 0.5
     # Khusus pengembangan: perlakukan semua akun sebagai High Tier agar semua fitur bisa dites tanpa pembayaran
     dev_unlock_all_tiers: bool = False

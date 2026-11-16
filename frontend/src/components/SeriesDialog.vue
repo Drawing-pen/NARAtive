@@ -2,10 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 
 const props = defineProps({
-  docs: { type: Array, required: true },                       // semua e-book milik pengguna
+  docs: { type: Array, required: true },
   collections: { type: Array, default: () => [] },
-  series: { type: Object, default: null },                     // seri yang sedang diubah; null = membuat baru
-  preselected: { type: Array, default: () => [] },             // id e-book yang sudah dipilih di awal (urut)
+  series: { type: Object, default: null },
+  preselected: { type: Array, default: () => [] },
   saving: { type: Boolean, default: false },
   error: { type: String, default: '' },
 })
@@ -21,7 +21,6 @@ const chosen = computed(() => ids.value.map((id) => byId.value.get(id)).filter(B
 const available = computed(() => props.docs.filter((d) => !ids.value.includes(d.id)))
 const canSave = computed(() => name.value.trim() && chosen.value.length >= MIN_BOOKS)
 
-// buku yang sudah berada di seri lain akan dipindahkan ke sini
 const seriesOf = (doc) => props.collections.find((c) => c.id !== props.series?.id && c.document_ids.includes(doc.id))?.name
 
 function move(i, delta) {

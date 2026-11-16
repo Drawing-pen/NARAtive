@@ -14,7 +14,6 @@ const loading = ref(true)
 const loadError = ref('')
 const uploading = ref(false)
 const uploadError = ref('')
-const limitHit = ref(false)    // unggahan ditolak karena batas paket (402): tawarkan halaman paket
 const dragging = ref(false)
 const fileInput = ref(null)
 let timer = null
@@ -70,7 +69,6 @@ async function confirmDelete() {
 // Satu per satu agar batas halaman dan kuota diperiksa per file (UC-02); file yang gagal tidak menggagalkan yang lain.
 async function uploadFiles(files) {
   uploadError.value = ''
-  limitHit.value = false
   const list = [...files]
   if (!list.length) return
   const label = (file, text) => (list.length > 1 ? `${file.name}: ${text}` : text)
@@ -88,8 +86,7 @@ async function uploadFiles(files) {
       try {
         created.push((await api.post('/documents', body)).data.id)
       } catch (e) {
-        if (e.response?.status === 402) limitHit.value = true
-        errors.push(label(file, errorMessage(e, 'Gagal menyimpan dokumen. Coba unggah lagi.')))
+        if (!e.tierDenied) errors.push(label(file, errorMessage(e, 'Gagal menyimpan dokumen. Coba unggah lagi.')))
       }
     }
     await load(true)
@@ -98,7 +95,7 @@ async function uploadFiles(files) {
     if (fileInput.value) fileInput.value.value = ''
   }
   uploadError.value = errors.join(' ')
-  if (created.length >= 2) openSeries(null, created)    // beberapa file sekaligus: tawarkan langsung jadi seri
+  if (created.length >= 2) openSeries(null, created)
 }
 
 function onDrop(event) {
@@ -106,8 +103,8 @@ function onDrop(event) {
   uploadFiles(event.dataTransfer.files)
 }
 
-// Seri buku (UC-02): kelompok e-book yang saling bersambung
-const seriesDialog = ref(null)    // { series, preselected } saat terbuka
+
+const seriesDialog = ref(null)
 const savingSeries = ref(false)
 const seriesError = ref('')
 
@@ -158,7 +155,7 @@ const dissolveSeries = () => runSeries(() => api.delete(`/collections/${seriesDi
 onMounted(() => {
   load()
   timer = setInterval(() => {
-    if (docs.value.some((d) => d.status === 'queued' || d.status === 'analyzing')) load(true)
+    if (docs.value.some((d) => ['reading', 'queued', 'analyzing'].includes(d.status))) load(true)
   }, 3000)
 })
 onBeforeUnmount(() => clearInterval(timer))
@@ -222,7 +219,6 @@ onBeforeUnmount(() => clearInterval(timer))
           <Icon icon="lucide:circle-alert" class="mt-0.5 size-4 shrink-0" />
           <span>
             {{ uploadError }}
-            <RouterLink v-if="limitHit" :to="{ name: 'plans' }" class="font-semibold underline">Lihat paket</RouterLink>
           </span>
         </p>
       </div>

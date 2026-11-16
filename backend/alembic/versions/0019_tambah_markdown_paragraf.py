@@ -1,9 +1,3 @@
-"""tambah paragraphs.markdown dan paragraphs.kind
-
-Revision ID: 0019
-Revises: 0018
-Create Date: 2026-10-30
-"""
 from typing import Sequence, Union
 
 from alembic import op

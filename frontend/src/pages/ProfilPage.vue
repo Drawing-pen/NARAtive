@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import api, { errorMessage } from '@/lib/api'
 import { auth, changePassword, deleteAccount, refreshUser, renameAccount } from '@/lib/auth'
 import { TX_STATUS, formatDate, rupiah, txItem } from '@/lib/content'
-import CheckoutDialog from '@/components/CheckoutDialog.vue'
 import TierChip from '@/components/TierChip.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 
@@ -15,7 +14,6 @@ const overview = ref(null)
 const transactions = ref([])
 const loading = ref(true)
 const error = ref('')
-const checkout = ref(null)
 
 const paid = computed(() => overview.value?.paid_tier ?? 'free')
 const usage = computed(() => overview.value?.usage)
@@ -37,10 +35,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-async function onChanged() {
-  await Promise.all([load(), refreshUser()])
 }
 
 const editingName = ref(false)
@@ -239,7 +233,7 @@ onMounted(async () => {
             </div>
             <span class="text-sm font-semibold text-navy tabular-nums">{{ rupiah(t.amount) }}</span>
             <span class="chip" :class="TX_STATUS[t.status].cls"><Icon :icon="TX_STATUS[t.status].icon" class="size-3" />{{ TX_STATUS[t.status].label }}</span>
-            <button v-if="t.status === 'pending'" type="button" class="btn btn-accent btn-sm" @click="checkout = { resume: t }">Lanjutkan bayar</button>
+            <button v-if="t.status === 'pending'" type="button" class="btn btn-accent btn-sm" @click="router.push({ name: 'order', params: { orderId: t.order_id } })">Lanjutkan bayar</button>
           </li>
         </ul>
       </article>
@@ -291,15 +285,5 @@ onMounted(async () => {
         </article>
       </section>
     </template>
-
-    <CheckoutDialog
-      v-if="checkout && overview"
-      :request="null"
-      :resume="checkout.resume"
-      :banks="overview.banks"
-      :provider="overview.provider"
-      @close="checkout = null"
-      @changed="onChanged"
-    />
   </div>
 </template>

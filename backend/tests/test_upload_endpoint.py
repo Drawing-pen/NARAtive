@@ -5,7 +5,8 @@ import pytest
 from app.api.routers import documents
 from app.core.config import settings
 from app.db import models
-from app.services import billing
+from app.extraction import ocr
+from app.services import billing, reader_jobs
 from tests.builders import blank_pdf, drm_encryption, make_epub, make_pdf, prose
 
 PDF = "application/pdf"
@@ -18,6 +19,9 @@ def environment(tmp_path, monkeypatch):
     monkeypatch.setattr(documents, "model_ready", lambda: True)
     queued = []
     monkeypatch.setattr(documents, "enqueue", queued.append)
+    monkeypatch.setattr(reader_jobs.jobs, "enqueue", queued.append)
+    monkeypatch.setattr(reader_jobs, "enqueue_read", reader_jobs.process_read)
+    monkeypatch.setattr(ocr, "ocr_ready", lambda: False)
     return queued
 
 
@@ -46,7 +50,7 @@ def story_epub():
 
 
 def leftovers(tmp_path):
-    return [name for name in os.listdir(tmp_path)]
+    return [name for _, _, files in os.walk(tmp_path) for name in files]
 
 
 class TestSuccess:
@@ -54,7 +58,9 @@ class TestSuccess:
         res = upload(client, auth, user, story_pdf())
         assert res.status_code == 201
         body = res.json()
-        assert body["title"] == "Cerita Rana" and body["status"] == "queued" and body["page_count"] == 2
+        assert body["title"] == "Cerita Rana" and body["status"] == "reading" and body["page_count"] == 2
+        db.expire_all()
+        assert db.get(models.Document, body["id"]).status == "queued"
         assert queued == [body["id"]]
 
     def test_an_epub_is_stored_and_queued(self, client, db, auth, user, queued):
@@ -167,16 +173,17 @@ class TestRejections:
     def test_a_mismatched_content_type_is_rejected(self, client, auth, user, name, mime):
         assert upload(client, auth, user, b"isi", name, mime).status_code == 400
 
-    def test_a_pdf_without_text_is_rejected(self, client, db, auth, user, queued, tmp_path):
+    def test_a_pdf_without_text_becomes_a_failed_book_with_a_reason(self, client, db, auth, user, queued, tmp_path):
         res = upload(client, auth, user, blank_pdf(3))
-        assert res.status_code == 400 and res.json()["detail"] == "File tidak berisi teks yang dapat dianalisis."
+        assert res.status_code == 201
         db.expire_all()
-        assert db.query(models.Document).count() == 0 and billing.used_this_month(db, user) == 0
-        assert queued == [] and leftovers(tmp_path) == []
+        doc = db.get(models.Document, res.json()["id"])
+        assert doc.status == "failed" and doc.failure_reason == reader_jobs.NO_TEXT
+        assert billing.used_this_month(db, user) == 0 and queued == [] and leftovers(tmp_path) == []
 
     def test_a_corrupt_pdf_is_rejected_politely(self, client, db, auth, user, tmp_path):
         res = upload(client, auth, user, b"%PDF-1.4 rusak total")
-        assert res.status_code == 400 and res.json()["detail"] == "File tidak dapat dibaca atau gagal disimpan. Coba unggah lagi."
+        assert res.status_code == 400 and res.json()["detail"] == reader_jobs.UNREADABLE
         assert leftovers(tmp_path) == []
 
     def test_a_file_that_cannot_be_deleted_afterwards_does_not_fail_the_upload(self, client, db, auth, user, monkeypatch):
@@ -199,12 +206,14 @@ class TestRejections:
         res = upload(client, auth, user, make_epub([("a.xhtml", "<h1>Judul saja</h1>")]), "kosong.epub", EPUB)
         assert res.status_code == 400 and "tidak berisi teks" in res.json()["detail"]
 
-    def test_nothing_is_kept_when_the_database_save_fails(self, client, db, auth, user, queued, tmp_path, monkeypatch):
+    def test_a_failure_while_saving_the_text_leaves_a_failed_book_and_no_files(self, client, db, auth, user, queued, tmp_path, monkeypatch):
         monkeypatch.setattr(billing, "consume_analysis", lambda *a: (_ for _ in ()).throw(RuntimeError("gagal")))
         res = upload(client, auth, user, story_pdf())
-        assert res.status_code == 400 and queued == [] and leftovers(tmp_path) == []
+        assert res.status_code == 201 and queued == [] and leftovers(tmp_path) == []
         db.expire_all()
-        assert db.query(models.Document).count() == 0
+        doc = db.get(models.Document, res.json()["id"])
+        assert doc.status == "failed" and doc.failure_reason == reader_jobs.GENERIC and doc.paragraphs == []
+        assert billing.used_this_month(db, user) == 0
 
     def test_a_missing_model_blocks_the_upload(self, client, db, auth, user, queued, monkeypatch):
         monkeypatch.setattr(documents, "model_ready", lambda: False)

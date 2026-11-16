@@ -6,10 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.services.jobs import start_worker
+from app.services.reader_jobs import start_worker as start_reader
 from app.services import characters as character_service
 from app.services.summarizer import reset_stale
 from app.ml.analyzer import ModelNotInstalled, get_analyzer
-from app.api.routers import auth, billing, collections, documents, images, sensitivity
+from app.api.routers import admin, auth, billing, collections, documents, images, sensitivity
 
 log = logging.getLogger("uvicorn.error")
 
@@ -25,6 +26,10 @@ async def lifespan(app: FastAPI):
         start_worker()
     except Exception as e:
         log.warning("Antrean analisis belum berjalan (%s).", e.__class__.__name__)
+    try:
+        start_reader()
+    except Exception as e:
+        log.warning("Pekerja pembaca PDF belum berjalan (%s).", e.__class__.__name__)
     try:
         reset_stale()
         character_service.reset_stale()
@@ -47,6 +52,7 @@ app.include_router(images.router)
 app.include_router(collections.router)
 app.include_router(billing.router)
 app.include_router(sensitivity.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

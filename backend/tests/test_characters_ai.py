@@ -118,6 +118,12 @@ class TestReadChunk:
         prompt = llm.calls[0]["prompt"]
         assert "istilah kekerabatan" in prompt and "Mama Raib" in prompt
 
+    def test_the_prompt_excludes_people_known_only_by_a_generic_title(self, llm):
+        llm.add(reply())
+        character_ai.read_chunk(one_chunk())
+        prompt = llm.calls[0]["prompt"]
+        assert "tanpa nama diri" in prompt and "jangan dimasukkan" in prompt.lower()
+
     def test_the_answer_is_cleaned(self, llm):
         llm.add(reply(
             sudut_pandang="pertama", narator="  Raib ", kata_ganti_pertama=["aku", " Aku ", "", None, "saya", "gue", "ku", "I", "me", "my", "mine"],

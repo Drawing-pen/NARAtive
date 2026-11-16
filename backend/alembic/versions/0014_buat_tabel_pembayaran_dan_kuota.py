@@ -1,9 +1,3 @@
-"""buat tabel transactions dan usage_quota, tambah users.tier_expires_at dan extra_checks
-
-Revision ID: 0014
-Revises: 0013
-Create Date: 2026-10-22
-"""
 from typing import Sequence, Union
 
 from alembic import op

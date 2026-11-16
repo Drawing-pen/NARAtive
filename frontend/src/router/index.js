@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { isLoggedIn } from '@/lib/auth'
+import { isAdmin, isLoggedIn } from '@/lib/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -10,6 +10,9 @@ const router = createRouter({
     { path: '/koleksi', name: 'library', component: () => import('@/pages/KoleksiPage.vue'), meta: { requiresAuth: true } },
     { path: '/profil', name: 'profile', component: () => import('@/pages/ProfilPage.vue'), meta: { requiresAuth: true } },
     { path: '/berlangganan', name: 'plans', component: () => import('@/pages/BerlanggananPage.vue') },
+    { path: '/admin', name: 'admin', component: () => import('@/pages/AdminPage.vue'), meta: { requiresAuth: true, requiresAdmin: true } },
+    { path: '/bayar', name: 'checkout', component: () => import('@/pages/BayarPage.vue'), meta: { requiresAuth: true } },
+    { path: '/bayar/:orderId', name: 'order', component: () => import('@/pages/BayarPage.vue'), props: true, meta: { requiresAuth: true } },
 
     { path: '/masuk', name: 'login', component: () => import('@/pages/AuthPage.vue'), props: { mode: 'masuk' }, meta: { bare: true, guest: true } },
     { path: '/lupa-sandi', name: 'forgot', component: () => import('@/pages/AuthPage.vue'), props: { mode: 'lupa' }, meta: { bare: true, guest: true } },
@@ -41,6 +44,7 @@ router.beforeEach((to) => {
   if (to.matched.some((r) => r.meta.requiresAuth) && !isLoggedIn()) {
     return { name: 'login', query: { next: to.fullPath } }
   }
+  if (to.meta.requiresAdmin && !isAdmin()) return { name: 'home' }
   if (to.meta.guest && isLoggedIn()) return { name: 'library' }
 })
 

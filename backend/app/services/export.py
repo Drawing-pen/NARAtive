@@ -19,6 +19,7 @@ p { margin: 0 0 6pt 0; text-align: justify; }
 p.hl { background-color: #FBE3A8; padding: 2pt 3pt; }
 span.tag { font-family: sans-serif; font-size: 7.5pt; color: #8a4b00; font-weight: bold; }
 .note { font-size: 8.5pt; color: #5b6480; }
+p.chsum { font-style: italic; color: #3a4466; background-color: #f4f0e6; padding: 3pt 4pt; }
 """
 
 
@@ -48,9 +49,16 @@ def build_pdf(doc, chapters, paragraphs, thresholds: dict) -> bytes:
          f"<p class='note'>{EMOTION_NEGATIVE_NOTE} Paragraf yang melewati ambang deteksi disorot kuning "
          f"dan diberi label dimensinya ({flagged} paragraf). Teks di bawah adalah hasil ekstraksi dan pembersihan "
          "sistem, sehingga dapat dibandingkan dengan buku aslinya.</p>"]
+    overall = (getattr(doc, "summary", None) or "").strip()
+    if overall:
+        h.append("<h2>Rangkuman cerita</h2>")
+        h.extend(f"<p>{escape(part.strip())}</p>" for part in overall.split("\n\n") if part.strip())
     titles = {c.number: c.title for c in chapters}
+    summaries = {c.number: (getattr(c, "summary", None) or "").strip() for c in chapters}
     for no in sorted(by_chapter):
         h.append(f"<h2>{escape(titles.get(no, f'Bab {no}'))}</h2>")
+        if summaries.get(no):
+            h.append(f"<p class='chsum'>Rangkuman bab: {escape(summaries[no])}</p>")
         for p in by_chapter[no]:
             fl = _flags(p, thresholds)
             if fl:

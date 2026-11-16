@@ -1,9 +1,3 @@
-"""tambah documents.cover_path
-
-Revision ID: 0018
-Revises: 0017
-Create Date: 2026-10-27
-"""
 from typing import Sequence, Union
 
 from alembic import op

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.plans import LIMITS, PAY_PER_CHECK_PRICE, PERIOD_DAYS, PLAN_LABEL, UPGRADE_PRICE
 from app.db.models import Document, Transaction, UsageQuota, User
-from app.services import email_templates, mailer
+from app.services import email_templates, mailer, payments
 
 TIER_RANK = {"free": 0, "middle": 1, "high": 2}
 MONTHS_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
@@ -33,7 +33,18 @@ def used_this_month(db: Session, user: User) -> int:
 
 
 def active_books(db: Session, user: User) -> int:
-    return db.scalar(select(func.count()).select_from(Document).where(Document.user_id == user.id)) or 0
+    return db.scalar(select(func.count()).select_from(Document).where(Document.user_id == user.id, Document.status != "failed")) or 0
+
+
+def books_being_read(db: Session, user: User) -> int:
+    return db.scalar(select(func.count()).select_from(Document).where(Document.user_id == user.id, Document.status == "reading")) or 0
+
+
+def remaining_analyses(db: Session, user: User) -> int | None:
+    monthly = LIMITS[user.access_tier].monthly
+    if monthly is None:
+        return None
+    return max(0, monthly - used_this_month(db, user)) + user.extra_checks
 
 
 def ensure_can_upload(db: Session, user: User, page_count: int) -> None:
@@ -49,7 +60,7 @@ def ensure_can_upload(db: Session, user: User, page_count: int) -> None:
         raise _limit_reached(
             f"Koleksi aktif penuh: paket {label} maksimal {limits.max_active} e-book. Hapus e-book yang tidak dipakai atau naikkan paketmu."
         )
-    if limits.monthly is not None and used_this_month(db, user) >= limits.monthly and user.extra_checks <= 0:
+    if limits.monthly is not None and remaining_analyses(db, user) <= books_being_read(db, user):
         reset = next_reset()
         raise _limit_reached(
             f"Kuota analisis bulan ini habis ({limits.monthly} per bulan). Beli analisis tambahan, "
@@ -77,8 +88,28 @@ def price_for(kind: str, plan: str | None, quantity: int) -> int:
     return UPGRADE_PRICE[plan] if kind == "upgrade" else PAY_PER_CHECK_PRICE * quantity
 
 
+def _reconcile(db: Session, tx: Transaction) -> None:
+    try:
+        data = payments.fetch_status(tx.order_id)
+    except payments.PaymentError:
+        return
+    new_status = payments.map_status(str(data.get("transaction_status", "")))
+    if new_status == "paid":
+        try:
+            if int(float(data.get("gross_amount", 0))) != tx.amount:
+                return
+        except (TypeError, ValueError):
+            return
+        settle(db, tx)
+    elif new_status:
+        tx.status = new_status
+        db.commit()
+
+
 def refresh(db: Session, tx: Transaction) -> Transaction:
-    """VA yang lewat batas waktunya dianggap kedaluwarsa."""
+    """Transaksi Midtrans yang menunggu ditanyakan ke Midtrans (notifikasi bisa terlewat); VA yang lewat batas waktunya dianggap kedaluwarsa."""
+    if tx.status == "pending" and tx.provider == "midtrans" and payments.provider() == "midtrans":
+        _reconcile(db, tx)
     if tx.status == "pending" and tx.expires_at <= datetime.utcnow():
         tx.status = "expired"
         db.commit()

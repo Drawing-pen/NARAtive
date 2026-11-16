@@ -8,3 +8,6 @@ uploads/
 # naskah contoh untuk uji manual (hak cipta, jangan diunggah)
 backend/*.pdf
 backend/*.epub
+
+# dokumen dan diagram milik pemilik proyek (SRS, SDD, draw.io)
+system design/

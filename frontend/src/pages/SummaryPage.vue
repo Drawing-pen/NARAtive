@@ -140,17 +140,6 @@ onBeforeUnmount(() => clearInterval(timer))
 
       <!-- Selesai -->
       <template v-else>
-        <section v-if="sum.status === 'partial'" role="status" class="card flex flex-col gap-3 border-amber bg-amber/10 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <p class="flex items-start gap-2 text-sm text-navy">
-            <Icon icon="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-            Sebagian bab dirangkum sederhana tanpa AI karena layanan Gemini sedang dibatasi atau menolak teks.
-          </p>
-          <button v-if="canCreate" class="btn btn-primary btn-sm shrink-0" :disabled="starting" @click="start">
-            <Icon icon="lucide:sparkles" class="size-4" />
-            Lanjutkan dengan AI
-          </button>
-        </section>
-
         <section class="card space-y-3 p-6 sm:p-8">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>

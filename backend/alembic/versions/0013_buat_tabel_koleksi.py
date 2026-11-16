@@ -1,9 +1,3 @@
-"""buat tabel collections dan kolom documents.collection_id, position
-
-Revision ID: 0013
-Revises: 0012
-Create Date: 2026-10-22
-"""
 from typing import Sequence, Union
 
 from alembic import op

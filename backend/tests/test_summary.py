@@ -197,6 +197,38 @@ class TestPipeline:
         assert "AWAL" in prompt and "AKHIR" in prompt and "[...]" in prompt
         assert len(prompt) < 9000
 
+    def test_a_very_long_chapter_is_summarised_in_parts_and_then_combined(self, db, make_user, gemini):
+        paragraphs = [f"P{i:03d} " + "x" * 990 for i in range(60)]
+        doc = build_book(db, make_user("middle"), [("Bab Panjang", paragraphs)])
+        summarizer.run(doc.id)
+        fresh = reload(db, doc)
+        sent = " ".join(c["prompt"] for c in gemini.calls)
+        assert all(f"P{i:03d}" in sent for i in range(60))
+        combined = [c for c in gemini.calls if "<bagian-bab>" in c["prompt"]]
+        assert len(combined) == 1 and "Rangkuman bab 1." in combined[0]["prompt"] and "Rangkuman bab 10." in combined[0]["prompt"] and "Rangkuman bab 11." not in combined[0]["prompt"]
+        assert len(gemini.batch_prompts()) == 1 and len(gemini.calls) == 3
+        assert summaries(fresh) == {1: "Rangkuman tunggal."} and sources(fresh) == {1: "ai"}
+        assert fresh.summary_status == "done"
+
+    def test_a_huge_chapter_is_cut_into_at_most_twelve_parts(self, db, make_user, gemini):
+        doc = build_book(db, make_user("middle"), [("Bab Raksasa", ["y" * 1000 for _ in range(100)])])
+        summarizer.run(doc.id)
+        combined = [c for c in gemini.calls if "<bagian-bab>" in c["prompt"]]
+        assert "Rangkuman bab 12." in combined[0]["prompt"] and "Rangkuman bab 13." not in combined[0]["prompt"]
+
+    def test_a_chapter_of_exactly_the_limit_is_still_one_excerpt(self, db, make_user, gemini):
+        doc = build_book(db, make_user("middle"), [("Bab 1", ["a" * summarizer.LONG_CHAPTER_CHARS])])
+        summarizer.run(doc.id)
+        assert not [c for c in gemini.calls if "<bagian-bab>" in c["prompt"]]
+        assert summaries(reload(db, doc)) == {1: "Rangkuman bab 1."}
+
+    def test_running_out_of_quota_on_a_long_chapter_falls_back_to_a_local_summary(self, db, make_user, gemini):
+        paragraphs = [f"Kalimat nomor {i}. " + "x" * 980 for i in range(60)]
+        doc = build_book(db, make_user("middle"), [("Bab Panjang", paragraphs)])
+        gemini.add(("http", 429, DAILY_429))
+        summarizer.run(doc.id)
+        assert sources(reload(db, doc)) == {1: "local"}
+
     def test_chapters_without_text_are_marked_unavailable_and_not_sent(self, db, make_user, gemini):
         doc = build_book(db, make_user("middle"), [("Bab 1", ["Isi satu."]), ("Kosong", []), ("Bab 3", ["Isi tiga."])])
         summarizer.run(doc.id)

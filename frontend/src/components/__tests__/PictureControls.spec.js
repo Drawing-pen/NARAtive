@@ -10,6 +10,7 @@ vi.mock('@/lib/api', () => ({
   errorMessage: (e, fallback) => e?.response?.data?.detail ?? fallback,
 }))
 vi.mock('@/lib/auth', () => ({ hasTier: () => state.high }))
+import { closeUpgrade, upgrade } from '@/lib/upgrade'
 
 import PictureControls from '@/components/PictureControls.vue'
 
@@ -77,10 +78,15 @@ describe('PictureControls', () => {
     expect(w.emitted('changed')).toEqual([[false]])
   })
 
-  it('shows a link to the plans instead of the controls below High', () => {
+  it('shows an upgrade button instead of the controls below High', async () => {
     state.high = false
+    closeUpgrade()
     const w = mountControls({ hasPicture: true })
-    expect(w.find('[data-test=plans]').exists()).toBe(true)
+    const lock = w.find('[data-test=upgrade]')
+    expect(lock.exists()).toBe(true)
+    await lock.trigger('click')
+    expect(upgrade).toMatchObject({ open: true, tier: 'high' })
+    closeUpgrade()
     expect(w.find('input[type=file]').exists()).toBe(false)
     expect(w.find('[aria-label="Kembalikan ke gambar bawaan"]').exists()).toBe(false)
   })

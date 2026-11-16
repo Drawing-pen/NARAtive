@@ -1,9 +1,3 @@
-"""hapus berantai: e-book mengikuti penggunanya, bab dan paragraf mengikuti e-booknya
-
-Revision ID: 0017
-Revises: 0016
-Create Date: 2026-10-27
-"""
 from typing import Sequence, Union
 
 from alembic import op

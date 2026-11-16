@@ -2,6 +2,8 @@ import logging
 import os
 import uuid
 
+import pymupdf
+
 from fastapi.responses import Response
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -15,11 +17,11 @@ from app.ml.analyzer import model_ready
 from app.db.models import Chapter, Character, CharacterRelation, Document, Paragraph, User
 from app.extraction.epub_utils import EpubError
 from app.extraction.reader import read_document
-from app.services import billing, images
+from app.services import billing, images, rating as rating_service, reader_jobs
 from app.services import characters as character_service
 from app.services import collections as collection_service
 from app.services import summarizer
-from app.api.schemas import ChapterOut, CharactersOut, DocumentOut, DocumentRename, ParagraphOut, RelationOut, SummaryOut
+from app.api.schemas import ChapterOut, CharactersOut, DocumentOut, DocumentRename, ParagraphOut, RatingOut, RelationOut, SummaryOut
 from app.core.security import ensure_tier, get_current_user, require_tier
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -30,6 +32,37 @@ def _own_document(db: Session, user: User, doc_id: int) -> Document:
     doc = db.get(Document, doc_id)
     if not doc or doc.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Dokumen tidak ditemukan.")
+    return doc
+
+
+def _start_pdf(db: Session, user: User, filename: str, data: bytes) -> Document:
+    try:
+        with pymupdf.open(stream=data, filetype="pdf") as pdf:
+            if pdf.needs_pass or pdf.page_count == 0:
+                raise ValueError("PDF terkunci atau kosong")
+            page_count = pdf.page_count
+    except Exception:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, reader_jobs.UNREADABLE)
+    billing.ensure_can_upload(db, user, page_count)
+    doc = Document(
+        user_id=user.id,
+        title=os.path.splitext(filename)[0][:255],
+        filename=os.path.basename(filename)[:255],
+        page_count=page_count,
+        paragraph_count=0,
+        read_pages=0,
+        status="reading",
+    )
+    db.add(doc)
+    db.commit()
+    try:
+        reader_jobs.store(doc.id, data)
+    except OSError:
+        log.exception("Berkas unggahan tidak bisa disimpan sementara")
+        db.delete(doc)
+        db.commit()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "File tidak dapat dibaca atau gagal disimpan. Coba unggah lagi.")
+    reader_jobs.enqueue_read(doc.id)
     return doc
 
 
@@ -50,11 +83,17 @@ def upload_document(
     if ext not in allowed or file.content_type not in allowed[ext]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Format file tidak didukung. Unggah file berformat PDF atau EPUB.")
 
+    data = file.file.read()
+    if len(data) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"Berkas terlalu besar: maksimal {settings.max_upload_mb} MB.")
+    if ext == ".pdf":
+        return _start_pdf(db, user, file.filename, data)
+
     os.makedirs(settings.upload_dir, exist_ok=True)
     stored = os.path.join(settings.upload_dir, f"{uuid.uuid4().hex}{ext}")
     try:
         with open(stored, "wb") as f:
-            f.write(file.file.read())
+            f.write(data)
         parsed = read_document(stored, ext)
         page_count, chapter_titles, paragraphs = parsed.page_count, parsed.titles, parsed.blocks
         if not paragraphs:
@@ -111,6 +150,7 @@ def delete_document(doc_id: int, user: User = Depends(get_current_user), db: Ses
     collection_service.prune_empty(db, user.id)
     db.commit()
     images.remove(*pictures)
+    reader_jobs.discard(doc_id)
 
 
 @router.patch("/{doc_id}", response_model=DocumentOut)
@@ -136,6 +176,14 @@ def export_document(doc_id: int, user: User = Depends(require_tier("high")), db:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Gagal menyusun PDF. Coba lagi.")
     safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in doc.title).strip()[:80] or "hasil"
     return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="NARAtive - {safe}.pdf"'})
+
+
+@router.get("/{doc_id}/rating", response_model=RatingOut)
+def rating_breakdown(doc_id: int, user: User = Depends(require_tier("middle")), db: Session = Depends(get_db)):
+    doc = _own_document(db, user, doc_id)
+    if doc.status != "done":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Analisis belum selesai.")
+    return rating_service.breakdown(db, doc)
 
 
 @router.get("/{doc_id}", response_model=DocumentOut)

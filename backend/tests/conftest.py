@@ -38,6 +38,13 @@ def no_real_router(monkeypatch):
         monkeypatch.setattr(settings, field, "")
 
 
+@pytest.fixture(autouse=True)
+def no_real_gateway(monkeypatch):
+    from app.services import payments
+
+    monkeypatch.setattr(payments, "fetch_status", lambda order_id: {})
+
+
 @pytest.fixture
 def client():
     return TestClient(app)

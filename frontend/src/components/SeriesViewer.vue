@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import BookCard from '@/components/BookCard.vue'
 
 defineProps({
-  group: { type: Object, required: true },    // { id, name, books: [dokumen berurutan] }
+  group: { type: Object, required: true },
 })
 const emit = defineEmits(['close', 'edit', 'delete'])
 

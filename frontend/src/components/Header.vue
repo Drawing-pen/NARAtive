@@ -1,6 +1,6 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { auth, isLoggedIn, logout, tierKey } from '@/lib/auth'
+import { auth, isAdmin, isLoggedIn, logout, tierKey } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
 import TierChip from '@/components/TierChip.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
@@ -40,6 +40,7 @@ const nav = [
 
       <div class="flex shrink-0 items-center gap-2">
         <template v-if="isLoggedIn()">
+          <RouterLink v-if="isAdmin()" :to="{ name: 'admin' }" class="btn btn-quiet btn-sm">Admin</RouterLink>
           <TierChip :tier="tierKey()" class="hidden lg:inline-flex" />
           <RouterLink :to="{ name: 'profile' }" class="group flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-lavender" :title="`Profil · ${auth.user?.email}`" aria-label="Buka profil">
             <UserAvatar :name="auth.user?.name" size="sm" />

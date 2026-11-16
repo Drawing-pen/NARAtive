@@ -13,6 +13,7 @@ from app.db import models
 from app.services import billing, payments
 
 SERVER_KEY = "SB-Mid-server-rahasia"
+REAL_FETCH_STATUS = payments.fetch_status if hasattr(payments, "fetch_status") else None
 
 
 def future(days=10):
@@ -685,3 +686,101 @@ class TestLateSettlement:
         tx = make_tx(db, user, provider="midtrans", status=state)
         assert self.notify(client, tx).status_code == 200
         assert fresh_user(db, user).tier == "middle" and len(outbox) == 1
+
+
+class TestStatusReconciliation:
+    @pytest.fixture(autouse=True)
+    def configured(self, monkeypatch, outbox):
+        monkeypatch.setattr(settings, "midtrans_server_key", SERVER_KEY)
+        self.asked = []
+
+    def gateway(self, monkeypatch, status, gross=None, error=None):
+        def fake(order_id):
+            self.asked.append(order_id)
+            if error:
+                raise error
+            return {"transaction_status": status, "gross_amount": gross}
+
+        monkeypatch.setattr(payments, "fetch_status", fake)
+
+    def test_a_payment_whose_notification_was_missed_is_settled_when_read(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        tx = make_tx(db, user, provider="midtrans", amount=29000)
+        self.gateway(monkeypatch, "settlement", "29000.00")
+        res = client.get(f"/billing/transactions/{tx.order_id}", headers=auth(user))
+        assert res.json()["status"] == "paid" and self.asked == [tx.order_id]
+        db.refresh(user)
+        assert user.access_tier == "middle"
+
+    def test_the_history_list_also_reconciles(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        make_tx(db, user, provider="midtrans", amount=29000)
+        self.gateway(monkeypatch, "settlement", "29000")
+        assert client.get("/billing/transactions", headers=auth(user)).json()[0]["status"] == "paid"
+
+    def test_a_settlement_with_the_wrong_amount_is_not_applied(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        tx = make_tx(db, user, provider="midtrans", amount=29000)
+        self.gateway(monkeypatch, "settlement", "1000")
+        assert client.get(f"/billing/transactions/{tx.order_id}", headers=auth(user)).json()["status"] == "pending"
+
+    def test_a_gateway_denial_marks_the_order(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        tx = make_tx(db, user, provider="midtrans")
+        self.gateway(monkeypatch, "deny", "29000")
+        assert client.get(f"/billing/transactions/{tx.order_id}", headers=auth(user)).json()["status"] == "failed"
+
+    def test_a_still_pending_order_stays_pending(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        tx = make_tx(db, user, provider="midtrans")
+        self.gateway(monkeypatch, "pending", "29000")
+        assert client.get(f"/billing/transactions/{tx.order_id}", headers=auth(user)).json()["status"] == "pending"
+
+    def test_a_gateway_failure_leaves_the_order_unchanged(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        tx = make_tx(db, user, provider="midtrans")
+        self.gateway(monkeypatch, None, error=payments.PaymentError("mati"))
+        assert client.get(f"/billing/transactions/{tx.order_id}", headers=auth(user)).json()["status"] == "pending"
+
+    def test_an_overdue_order_paid_at_the_gateway_is_settled_not_expired(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        tx = make_tx(db, user, provider="midtrans", amount=29000, expires_at=past())
+        self.gateway(monkeypatch, "settlement", "29000")
+        assert client.get(f"/billing/transactions/{tx.order_id}", headers=auth(user)).json()["status"] == "paid"
+
+    def test_finished_and_simulated_orders_never_ask_the_gateway(self, client, db, auth, make_user, monkeypatch):
+        user = make_user("free")
+        paid = make_tx(db, user, provider="midtrans", status="paid", order_id="NAR-X-1")
+        simulated = make_tx(db, user, provider="simulated", order_id="NAR-X-2")
+        self.gateway(monkeypatch, "settlement", "29000")
+        client.get(f"/billing/transactions/{paid.order_id}", headers=auth(user))
+        client.get(f"/billing/transactions/{simulated.order_id}", headers=auth(user))
+        assert self.asked == []
+
+
+class TestFetchStatus:
+    @pytest.fixture(autouse=True)
+    def configured(self, monkeypatch):
+        monkeypatch.setattr(settings, "midtrans_server_key", SERVER_KEY)
+
+    def test_it_reads_the_status_with_a_get_request(self, monkeypatch):
+        seen = []
+
+        def fake(req, timeout=None):
+            seen.append(req)
+            return io.BytesIO(json.dumps({"transaction_status": "settlement"}).encode())
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake)
+        monkeypatch.setattr(payments, "fetch_status", REAL_FETCH_STATUS)
+        assert payments.fetch_status("NAR-1-x")["transaction_status"] == "settlement"
+        assert seen[0].get_method() == "GET" and seen[0].full_url == "https://api.sandbox.midtrans.com/v2/NAR-1-x/status"
+
+    def test_a_network_error_becomes_a_payment_error(self, monkeypatch):
+        def fake(req, timeout=None):
+            raise urllib.error.URLError("mati")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake)
+        monkeypatch.setattr(payments, "fetch_status", REAL_FETCH_STATUS)
+        with pytest.raises(payments.PaymentError):
+            payments.fetch_status("NAR-1-x")
+
