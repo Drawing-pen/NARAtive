@@ -1,0 +1,42 @@
+app = 'narative-api-ipl26'
+primary_region = 'sin'
+
+[env]
+  MODEL_DIR = '/data/model'
+  UPLOAD_DIR = '/data/uploads'
+  HF_HOME = '/data/hf'
+  MODEL_URL = 'https://huggingface.co/Roena33/narative-model/resolve/main/model_best.pt'
+  DOCUMENT_PARSER = 'auto'
+  DEV_UNLOCK_ALL_TIERS = 'false'
+  CHARACTER_PARALLEL = '3'
+  MAX_UPLOAD_MB = '100'
+  OCR_ENABLED = 'true'
+  OCR_LANGUAGES = 'ind+eng'
+  OCR_DPI = '200'
+  ROUTER_BASE_URL = 'http://narative-router-ipl26.internal:20128/v1'
+  CORS_ORIGINS = 'https://narativedef.netlify.app'
+  FRONTEND_URL = 'https://narativedef.netlify.app'
+
+[[mounts]]
+  source = 'narative_data'
+  destination = '/data'
+  initial_size = '5gb'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = '8m'
+    interval = '30s'
+    timeout = '10s'
+    method = 'GET'
+    path = '/docs'
+
+[[vm]]
+  memory = '4gb'
+  cpu_kind = 'shared'
+  cpus = 2

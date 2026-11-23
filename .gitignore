@@ -11,3 +11,7 @@ backend/*.epub
 
 # dokumen dan diagram milik pemilik proyek (SRS, SDD, draw.io)
 system design/
+
+# salinan data 9router untuk deploy (berisi kunci, JANGAN di-commit)
+router_data.tgz
+*.tgz

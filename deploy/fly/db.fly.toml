@@ -1,0 +1,20 @@
+app = 'narative-db-ipl26'
+primary_region = 'sin'
+
+[build]
+  image = 'postgres:16-alpine'
+
+[env]
+  POSTGRES_DB = 'narative'
+  POSTGRES_USER = 'narative'
+  PGDATA = '/var/lib/postgresql/data/pgdata'
+
+[[mounts]]
+  source = 'pg_data'
+  destination = '/var/lib/postgresql/data'
+  initial_size = '1gb'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

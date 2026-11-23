@@ -19,3 +19,4 @@ tiktoken
 # model (install terpisah untuk CPU):
 # pip install torch --index-url https://download.pytorch.org/whl/cpu
 # pip install transformers peft sentencepiece scikit-learn
+psycopg[binary]

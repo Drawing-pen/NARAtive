@@ -69,6 +69,14 @@ services:
     ports:
       - "5173:80"
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    command: ${TUNNEL_COMMAND:-tunnel --no-autoupdate --url http://frontend:80}
+
 volumes:
   db_data:
   uploads:

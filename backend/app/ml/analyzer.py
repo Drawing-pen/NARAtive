@@ -1,4 +1,5 @@
 """Analyzer konten: model XLM-RoBERTa + LoRA hasil latih (model_best.pt + tokenizer_xlmr)."""
+import threading
 import logging
 import time
 from pathlib import Path
@@ -82,16 +83,19 @@ def model_ready() -> bool:
 
 
 _analyzer = None
+_load_lock = threading.Lock()
 
 
 def get_analyzer() -> ModelAnalyzer:
     global _analyzer
     if _analyzer is None:
-        if not model_ready():
-            ckpt, tok = _model_paths()
-            raise ModelNotInstalled(f"Model tidak ditemukan. Taruh {ckpt.name} dan folder {tok.name} di {ckpt.parent.resolve()}.")
-        ckpt, tok = _model_paths()
-        _analyzer = ModelAnalyzer(ckpt, tok)
+        with _load_lock:
+            if _analyzer is None:
+                if not model_ready():
+                    ckpt, tok = _model_paths()
+                    raise ModelNotInstalled(f"Model tidak ditemukan. Taruh {ckpt.name} dan folder {tok.name} di {ckpt.parent.resolve()}.")
+                ckpt, tok = _model_paths()
+                _analyzer = ModelAnalyzer(ckpt, tok)
     return _analyzer
 
 

@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,13 +16,20 @@ from app.api.routers import admin, auth, billing, collections, documents, images
 log = logging.getLogger("uvicorn.error")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def _load_model() -> None:
     try:
         get_analyzer()
         log.info("Model analisis siap.")
     except ModelNotInstalled as e:
         log.warning("%s Unggahan akan ditolak sampai model terpasang.", e)
+    except Exception as e:
+        log.warning("Model analisis gagal dimuat (%s); akan dicoba lagi saat dipakai.", e.__class__.__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.model_loader = threading.Thread(target=_load_model, name="model-loader", daemon=True)
+    app.state.model_loader.start()
     try:
         start_worker()
     except Exception as e:
