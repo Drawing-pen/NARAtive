@@ -84,8 +84,10 @@ class Transaction(Base):
     plan: Mapped[str | None] = mapped_column(String(10), nullable=True)    # middle | high (untuk upgrade)
     quantity: Mapped[int] = mapped_column(Integer, default=1, server_default="1")   # jumlah analisis (pay-per-check)
     amount: Mapped[int] = mapped_column(Integer)                           # rupiah
-    bank: Mapped[str] = mapped_column(String(10))
-    va_number: Mapped[str] = mapped_column(String(30))
+    bank: Mapped[str | None] = mapped_column(String(10), nullable=True)           # NULL untuk pembayaran lewat Snap (R30)
+    va_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    snap_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payment_method: Mapped[str | None] = mapped_column(String(60), nullable=True)  # label metode yang dipakai, diisi saat lunas
     provider: Mapped[str] = mapped_column(String(12))                      # simulated | midtrans
     status: Mapped[str] = mapped_column(String(10), default="pending")     # pending | paid | failed | expired | cancelled
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -143,9 +145,23 @@ class Document(Base):
     characters_status: Mapped[str | None] = mapped_column(String(10), nullable=True) 
     cover_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     read_pages: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    analysis_progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    characters_progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     owner: Mapped["User"] = relationship(back_populates="documents")
+
+    @property
+    def progress(self) -> int | None:
+        if self.status == "reading":
+            if not self.page_count:
+                return 0
+            return min(100, round(self.read_pages / self.page_count * 100))
+        if self.status == "queued":
+            return 0
+        if self.status == "analyzing":
+            return min(100, max(0, self.analysis_progress or 0))
+        return None
 
     @property
     def has_cover(self) -> bool:

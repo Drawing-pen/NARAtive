@@ -50,6 +50,7 @@ export const STATUS = {
   analyzing: { label: 'Sedang dianalisis', cls: 'bg-amber/35 text-navy', icon: 'lucide:loader-circle', spin: true },
   done: { label: 'Selesai dianalisis', cls: 'bg-lavender/20 text-navy', icon: 'lucide:circle-check' },
   failed: { label: 'Analisis gagal', cls: 'bg-danger/10 text-danger', icon: 'lucide:circle-x' },
+  not_novel: { label: 'Bukan novel', cls: 'bg-sand text-muted', icon: 'lucide:file-text' },
 }
 
 export function formatDate(iso) {
@@ -75,6 +76,33 @@ export function formatDateTime(iso) {
 export const rupiah = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`
 
 export const BANKS = { bca: 'BCA', bni: 'BNI', bri: 'BRI', permata: 'Permata' }
+
+export const PLAN_DETAILS = [
+  {
+    key: 'standard', tier: 'free', name: 'Standard', tag: 'Gratis', icon: 'lucide:user',
+    limits: ['50 halaman per unggahan', '3 analisis per bulan', '3 e-book aktif'],
+    features: ['Rating dan rentang usia', 'Persentase konten dewasa dan bobot cerita', 'Mode baca dan Safe Mode standar'],
+  },
+  {
+    key: 'middle', tier: 'middle', name: 'Middle', tag: 'Menengah', icon: 'lucide:sparkles',
+    limits: ['300 halaman per unggahan', '15 analisis per bulan', '50 e-book aktif'],
+    features: ['Semua fitur Standard', 'Rincian per dimensi dan alasan rating', 'Rangkuman cerita per bab', 'Deskripsi tokoh', 'Relasi antar tokoh'],
+  },
+  {
+    key: 'high', tier: 'high', name: 'High', tag: 'Lengkap', popular: true, icon: 'lucide:crown',
+    limits: ['Tanpa batas halaman', 'Tanpa batas analisis', 'Tanpa batas koleksi'],
+    features: ['Semua fitur Middle', 'Profil sensitivitas personal', 'Unduh hasil analisis (PDF beranotasi)'],
+  },
+]
+
+export const SIM_METHODS = [
+  { key: 'bca', label: 'Virtual Account BCA' },
+  { key: 'bni', label: 'Virtual Account BNI' },
+  { key: 'bri', label: 'Virtual Account BRI' },
+  { key: 'permata', label: 'Virtual Account PERMATA' },
+  { key: 'qris', label: 'QRIS' },
+  { key: 'gopay', label: 'GoPay' },
+]
 
 export const TX_STATUS = {
   pending: { label: 'Menunggu pembayaran', cls: 'bg-amber/35 text-navy', icon: 'lucide:hourglass' },
@@ -117,6 +145,21 @@ export function initials(name) {
 export function relationType(type) {
   const key = RELATION_ALIAS[type] ?? type
   return { key, ...(RELATION_TYPES[key] ?? RELATION_TYPES.kenalan) }
+}
+
+export const LOADING_TIPS = {
+  reading: [
+    'Berkas dibaca halaman demi halaman.',
+    'Bab dan paragraf dikenali otomatis.',
+    'Kamu boleh menutup halaman ini; prosesnya tetap berjalan.',
+  ],
+  analysis: [
+    'Setiap bab diperiksa untuk kekerasan, bahasa kasar, dan konten dewasa.',
+    'Hasilnya adalah prediksi, bukan pengganti penilaian manusia.',
+    'Kamu boleh menutup halaman ini; hasilnya tersimpan di koleksimu.',
+  ],
+  summary: ['Rangkuman dibuat per bab lalu digabung.', 'Bab yang panjang dibagi menjadi beberapa bagian dulu.'],
+  characters: ['Tokoh dicari per bagian buku lalu digabung.', 'Relasi hanya dipakai bila kutipan buktinya ada di teks.'],
 }
 
 export const UPCOMING = [

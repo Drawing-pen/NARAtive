@@ -95,8 +95,31 @@ describe('TokohPage', () => {
   })
 
   it('menampilkan kemajuan saat sedang mendeteksi', () => {
-    setup({ data: ref({ status: 'running', characters: [] }) })
-    expect(open().text()).toContain('Sedang mendeteksi tokoh')
+    setup({ data: ref({ status: 'running', progress: 35, characters: [] }) })
+    const w = open()
+    expect(w.text()).toContain('Sedang mendeteksi tokoh')
+    expect(w.find('[data-test="percent"]').text()).toBe('35%')
+    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('35')
+  })
+
+  it('dokumen bukan novel terkunci dengan pesan khusus', () => {
+    setup({ doc: ref({ ...DOC, status: 'not_novel' }), data: ref({ status: null, characters: [] }) })
+    const w = open()
+    expect(w.text()).toContain('Dokumen ini bukan novel')
+    expect(w.text()).not.toContain('setelah analisis buku ini selesai')
+    expect(buttonByText(w, 'Deteksi tokoh')).toBeUndefined()
+  })
+
+  it('pesan bukan novel lebih diutamakan daripada kunci tingkatan', () => {
+    allowed.middle = false
+    setup({ doc: ref({ ...DOC, status: 'not_novel' }), data: ref({ status: null, characters: [] }), locked: ref(true) })
+    expect(open().text()).toContain('Dokumen ini bukan novel')
+    allowed.middle = true
+  })
+
+  it('tanpa angka dari server tampil sebagai keadaan tak tentu', () => {
+    setup({ data: ref({ status: 'running', progress: null, characters: [] }) })
+    expect(open().find('[data-test="fill"]').classes()).toContain('is-indeterminate')
   })
 
   it('menawarkan coba lagi saat deteksi gagal', async () => {

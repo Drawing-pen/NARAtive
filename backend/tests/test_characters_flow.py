@@ -294,7 +294,7 @@ class TestEndpoints:
 
     def test_a_document_never_analysed_for_characters_is_empty(self, client, story, owner, auth):
         body = client.get(f"/documents/{story.id}/characters", headers=auth(owner)).json()
-        assert body == {"status": None, "characters": [], "relations": []}
+        assert body == {"status": None, "progress": None, "characters": [], "relations": []}
 
     def test_the_result_lists_characters_by_mentions_and_relations_by_chapter(self, client, db, story, owner, auth, llm):
         characters.extract(db, story)

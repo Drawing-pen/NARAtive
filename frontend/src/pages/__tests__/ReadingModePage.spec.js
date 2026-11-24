@@ -206,6 +206,15 @@ describe('profil sensitivitas personal', () => {
   })
 })
 
+describe('mode baca untuk dokumen yang bukan novel', () => {
+  it('terkunci dengan pesan bukan novel, bukan belum selesai dianalisis', async () => {
+    serve({ doc: { id: 1, title: 'Makalah', status: 'not_novel' }, paragraphs: [] })
+    const w = await open()
+    expect(w.text()).toContain('Dokumen ini bukan novel')
+    expect(w.text()).not.toContain('belum selesai dianalisis')
+  })
+})
+
 describe('keadaan halaman', () => {
   it('menampilkan pesan bila analisis belum selesai', async () => {
     serve({ doc: { id: 1, title: 'Buku Uji', status: 'analyzing' } })

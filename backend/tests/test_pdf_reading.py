@@ -187,6 +187,37 @@ class TestProcessRead:
         reader_jobs.process_read(doc.id)
         assert fresh(db, doc).failure_reason == reader_jobs.LOST
 
+    def test_low_confidence_on_most_recognised_pages_fails_with_the_quality_reason(self, db, owner, monkeypatch):
+        doc = reading(db, owner, make_pdf(BOOK, sizes=SIZES))
+
+        def prepare(source, destination, on_page=None, should_stop=None):
+            return ocr.Prepared(path=source, pages=3, ocr_pages=3, known_words=90, total_words=100, low_confidence_pages=2)
+
+        monkeypatch.setattr(ocr, "prepare_pdf", prepare)
+        reader_jobs.process_read(doc.id)
+        doc = fresh(db, doc)
+        assert doc.status == "failed" and doc.failure_reason == reader_jobs.POOR_QUALITY and used(db, owner) == 0
+
+    def test_a_minority_of_low_confidence_pages_is_accepted(self, db, owner, monkeypatch):
+        doc = reading(db, owner, make_pdf(BOOK, sizes=SIZES))
+
+        def prepare(source, destination, on_page=None, should_stop=None):
+            return ocr.Prepared(path=source, pages=3, ocr_pages=3, known_words=90, total_words=100, low_confidence_pages=1)
+
+        monkeypatch.setattr(ocr, "prepare_pdf", prepare)
+        reader_jobs.process_read(doc.id)
+        assert fresh(db, doc).status == "queued"
+
+    def test_few_recognised_pages_are_not_judged_by_confidence(self, db, owner, monkeypatch):
+        doc = reading(db, owner, make_pdf(BOOK, sizes=SIZES))
+
+        def prepare(source, destination, on_page=None, should_stop=None):
+            return ocr.Prepared(path=source, pages=3, ocr_pages=1, known_words=90, total_words=100, low_confidence_pages=1)
+
+        monkeypatch.setattr(ocr, "prepare_pdf", prepare)
+        reader_jobs.process_read(doc.id)
+        assert fresh(db, doc).status == "queued"
+
     def test_an_unexpected_error_fails_politely_and_keeps_the_quota(self, db, owner, monkeypatch):
         def boom(*args, **kwargs):
             raise RuntimeError("meledak")

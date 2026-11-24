@@ -19,6 +19,31 @@ const paid = computed(() => overview.value?.paid_tier ?? 'free')
 const usage = computed(() => overview.value?.usage)
 const quotaPct = computed(() => (usage.value?.monthly_limit ? Math.min(100, (usage.value.used / usage.value.monthly_limit) * 100) : 0))
 const pendingCount = computed(() => transactions.value.filter((t) => t.status === 'pending').length)
+const checking = ref('')
+const checkNote = ref('')
+
+const checkable = (t) => t.provider === 'midtrans' && t.status !== 'paid'
+
+async function checkPayment(t) {
+  if (checking.value) return
+  checking.value = t.order_id
+  checkNote.value = ''
+  try {
+    const { data } = await api.post(`/billing/transactions/${t.order_id}/check`)
+    transactions.value = transactions.value.map((row) => (row.order_id === data.order_id ? data : row))
+    if (data.status === 'paid') {
+      checkNote.value = 'Pembayaran tercatat berhasil.'
+      refreshUser()
+      api.get('/billing/overview').then((r) => (overview.value = r.data)).catch(() => {})
+    } else {
+      checkNote.value = `Belum ada pembayaran yang terdeteksi untuk pesanan ini. Jika uangmu sudah terpotong, hubungi admin dengan nomor pesanan ${t.order_id}.`
+    }
+  } catch {
+    checkNote.value = 'Gagal memeriksa status. Coba lagi.'
+  } finally {
+    checking.value = ''
+  }
+}
 const planEnds = computed(() => {
   if (paid.value === 'free') return 'Gratis, tanpa masa berlaku'
   return overview.value?.tier_expires_at ? `Aktif sampai ${formatDate(overview.value.tier_expires_at)}` : 'Tanpa batas waktu'
@@ -233,9 +258,18 @@ onMounted(async () => {
             </div>
             <span class="text-sm font-semibold text-navy tabular-nums">{{ rupiah(t.amount) }}</span>
             <span class="chip" :class="TX_STATUS[t.status].cls"><Icon :icon="TX_STATUS[t.status].icon" class="size-3" />{{ TX_STATUS[t.status].label }}</span>
+            <RouterLink v-if="t.status === 'paid'" :to="{ name: 'invoice', params: { orderId: t.order_id } }" class="btn btn-outline btn-sm">
+              <Icon icon="lucide:file-text" class="size-4" />
+              Lihat invoice
+            </RouterLink>
             <button v-if="t.status === 'pending'" type="button" class="btn btn-accent btn-sm" @click="router.push({ name: 'order', params: { orderId: t.order_id } })">Lanjutkan bayar</button>
+            <button v-if="checkable(t)" type="button" class="btn btn-quiet btn-sm" :disabled="!!checking" @click="checkPayment(t)">
+              <Icon :icon="checking === t.order_id ? 'lucide:loader-circle' : 'lucide:refresh-cw'" class="size-4" :class="{ 'animate-spin': checking === t.order_id }" />
+              Periksa status
+            </button>
           </li>
         </ul>
+        <p v-if="checkNote" role="status" data-test="check-note" class="rounded-lg bg-paper px-3 py-2.5 text-sm text-navy">{{ checkNote }}</p>
       </article>
 
       <section class="grid gap-6 lg:grid-cols-2" aria-label="Keamanan">

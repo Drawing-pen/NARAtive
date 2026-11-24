@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api, { errorMessage } from '@/lib/api'
 import { DIMENSIONS, STANDARD_SAFE_MODE } from '@/lib/content'
+import NotNovelNotice from '@/components/NotNovelNotice.vue'
 import ReadingBlock from '@/components/ReadingBlock.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
@@ -163,6 +164,8 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
           Coba lagi
         </button>
       </div>
+
+      <NotNovelNotice v-else-if="doc && doc.status === 'not_novel'" :id="id" class="mx-auto max-w-md" />
 
       <div v-else-if="doc && doc.status !== 'done'" class="card mx-auto grid max-w-md place-items-center gap-3 px-6 py-12 text-center">
         <Icon icon="lucide:scan-search" class="size-10 text-lavender" />

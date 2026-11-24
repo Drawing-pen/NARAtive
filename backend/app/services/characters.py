@@ -318,7 +318,18 @@ def extract(db: Session, doc: Document) -> tuple[int, int, bool]:
         raise CharacterError("Deteksi tokoh butuh layanan AI (9router atau Gemini) di server.")
     paragraphs = [{"chapter_no": p.chapter_no, "text": p.text, "sexual": p.sexual or 0.0} for p in doc.paragraphs]
     chunks = character_ai.make_chunks(paragraphs)
-    result = build(paragraphs, chunks, character_ai.read_chunks(chunks))
+
+    def report(value: int) -> None:
+        doc.characters_progress = value
+        db.commit()
+
+    def merging(entries: list[dict]):
+        report(90)
+        return character_ai.merge_safe(entries)
+
+    results = character_ai.read_chunks(chunks, on_progress=lambda done, total: report(80 * done // total))
+    result = build(paragraphs, chunks, results, merge_fn=merging)
+    report(95)
 
     old_ids = list(db.scalars(select(Character.id).where(Character.document_id == doc.id)))
     if old_ids:
@@ -359,7 +370,7 @@ def run(doc_id: int) -> None:
         doc = db.get(Document, doc_id)
         if doc is None:
             return
-        doc.characters_status = "running"
+        doc.characters_status, doc.characters_progress = "running", 0
         db.commit()
         try:
             with _lock:
@@ -374,6 +385,8 @@ def run(doc_id: int) -> None:
         doc = db.get(Document, doc_id)
         if doc is not None:
             doc.characters_status = status
+            if status != "failed":
+                doc.characters_progress = 100
             db.commit()
 
 

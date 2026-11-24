@@ -3,26 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { errorMessage } from '@/lib/api'
 import { isLoggedIn } from '@/lib/auth'
-import { formatDate, rupiah } from '@/lib/content'
+import { PLAN_DETAILS as plans, formatDate, rupiah } from '@/lib/content'
 import TierChip from '@/components/TierChip.vue'
 
-const plans = [
-  {
-    key: 'standard', tier: 'free', name: 'Standard', tag: 'Gratis', icon: 'lucide:user',
-    limits: ['50 halaman per unggahan', '3 analisis per bulan', '3 e-book aktif'],
-    features: ['Rating dan rentang usia', 'Persentase konten dewasa dan bobot cerita', 'Mode baca dan Safe Mode standar'],
-  },
-  {
-    key: 'middle', tier: 'middle', name: 'Middle', tag: 'Menengah', icon: 'lucide:sparkles',
-    limits: ['300 halaman per unggahan', '15 analisis per bulan', '50 e-book aktif'],
-    features: ['Semua fitur Standard', 'Rincian per dimensi dan alasan rating', 'Rangkuman cerita per bab', 'Deskripsi tokoh', 'Relasi antar tokoh'],
-  },
-  {
-    key: 'high', tier: 'high', name: 'High', tag: 'Lengkap', popular: true, icon: 'lucide:crown',
-    limits: ['Tanpa batas halaman', 'Tanpa batas analisis', 'Tanpa batas koleksi'],
-    features: ['Semua fitur Middle', 'Profil sensitivitas personal', 'Unduh hasil analisis (PDF beranotasi)'],
-  },
-]
 const RANK = { free: 0, middle: 1, high: 2 }
 const PACKS = [1, 3, 5]
 

@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { errorMessage } from '@/lib/api'
 import { hasTier } from '@/lib/auth'
 import TierLock from '@/components/TierLock.vue'
+import NotNovelNotice from '@/components/NotNovelNotice.vue'
+import ProgressLoader from '@/components/ProgressLoader.vue'
+import { LOADING_TIPS } from '@/lib/content'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -81,9 +84,11 @@ onBeforeUnmount(() => clearInterval(timer))
         {{ error }}
       </p>
 
+      <NotNovelNotice v-if="doc.status === 'not_novel'" :id="id" />
+
       <!-- Analisis belum selesai -->
       <TierLock
-        v-if="locked"
+        v-else-if="locked"
         tier="middle"
         title="Fitur khusus Middle Tier"
         text="Rangkuman cerita tersedia untuk pengguna Middle Tier ke atas. Rangkuman yang sudah pernah dibuat tetap bisa dilihat."
@@ -112,17 +117,14 @@ onBeforeUnmount(() => clearInterval(timer))
       </section>
 
       <!-- Sedang dibuat -->
-      <section v-else-if="sum.status === 'running'" class="card grid place-items-center gap-4 px-6 py-16 text-center">
-        <Icon icon="lucide:loader-circle" class="size-12 animate-spin text-navy" />
-        <div class="space-y-1">
-          <h2 class="text-2xl font-semibold">Sedang membuat rangkuman</h2>
-          <p class="max-w-md text-sm text-muted">
-            {{ sum.done_chapters }} dari {{ sum.total_chapters }} bab selesai. Halaman ini memperbarui diri otomatis.
-          </p>
-        </div>
-        <div class="h-2 w-full max-w-xs overflow-hidden rounded-full bg-sand">
-          <div class="h-full rounded-full bg-navy transition-all" :style="{ width: (sum.total_chapters ? (sum.done_chapters / sum.total_chapters) * 100 : 0) + '%' }" />
-        </div>
+      <section v-else-if="sum.status === 'running'" class="card grid place-items-center px-6 py-14">
+        <ProgressLoader
+          :percent="sum.progress"
+          title="Sedang membuat rangkuman"
+          :detail="`${sum.done_chapters} dari ${sum.total_chapters} bab selesai. Halaman ini memperbarui diri otomatis.`"
+          :tips="LOADING_TIPS.summary"
+          icon="lucide:scroll-text"
+        />
       </section>
 
       <!-- Gagal -->

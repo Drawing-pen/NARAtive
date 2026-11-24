@@ -39,6 +39,13 @@ def no_real_router(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_tesseract_binary(monkeypatch):
+    from app.extraction import ocr
+
+    monkeypatch.setattr(ocr, "tesseract_binary", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def no_real_gateway(monkeypatch):
     from app.services import payments
 

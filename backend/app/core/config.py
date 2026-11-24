@@ -28,12 +28,19 @@ class Settings(BaseSettings):
     ocr_languages: str = "ind+eng"
     ocr_dpi: int = 200
     tessdata_dir: str = ""
-    seconds_per_paragraph: float = 0.5
+    document_type_check: bool = True
+    ocr_engine: str = "auto"
+    ocr_timeout: float = 120.0
+    vision_batch_pages: int = 8
+    vision_batch_mb: float = 6.0
+    vision_max_pages: int = 60
+    seconds_per_paragraph: float = 0.3
     # Khusus pengembangan: perlakukan semua akun sebagai High Tier agar semua fitur bisa dites tanpa pembayaran
     dev_unlock_all_tiers: bool = False
 
     # Pembayaran: tanpa kunci Midtrans, pembayaran berjalan dalam mode simulasi (tanpa uang sungguhan)
     midtrans_server_key: str = ""
+    midtrans_client_key: str = ""
     midtrans_is_production: bool = False
     # Invoice via email: tanpa smtp_host, invoice hanya dicatat di log server
     smtp_host: str = ""

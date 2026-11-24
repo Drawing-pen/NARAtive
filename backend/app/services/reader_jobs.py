@@ -11,7 +11,7 @@ from app.db.database import SessionLocal
 from app.db.models import Chapter, Document, Paragraph, User
 from app.extraction import ocr
 from app.extraction.reader import read_document
-from app.services import billing, jobs
+from app.services import billing, doc_type, jobs
 
 log = logging.getLogger("uvicorn.error")
 
@@ -102,11 +102,18 @@ def process_read(doc_id: int) -> None:
         if prepared.ocr_pages * 2 >= prepared.pages and prepared.quality is not None and prepared.quality < MIN_QUALITY:
             _fail(db, doc_id, POOR_QUALITY)
             return
+        if prepared.ocr_pages and prepared.ocr_pages * 2 >= prepared.pages and prepared.low_confidence_pages * 2 >= prepared.ocr_pages:
+            _fail(db, doc_id, POOR_QUALITY)
+            return
         parsed = read_document(prepared.path, ".pdf")
         if not parsed.blocks:
             _fail(db, doc_id, NO_TEXT)
             return
         if _gone(db, doc_id):
+            return
+        if doc_type.classify([block.text for _, block in parsed.blocks]) == "other":
+            doc.status, doc.read_pages = "not_novel", doc.page_count
+            db.commit()
             return
         doc.chapters = [Chapter(number=i + 1, title=t[:255]) for i, t in enumerate(parsed.titles)]
         doc.paragraphs = [Paragraph(idx=i, chapter_no=n, text=b.text, markdown=b.markdown, kind=b.kind) for i, (n, b) in enumerate(parsed.blocks)]

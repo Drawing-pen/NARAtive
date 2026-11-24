@@ -30,14 +30,21 @@ def process(doc_id: int) -> None:
         doc = db.get(Document, doc_id)
         if doc is None:
             return
-        doc.status = "analyzing"
+        doc.status, doc.analysis_progress = "analyzing", 0
         db.commit()
         paras = list(doc.paragraphs)
-        results = llm_analyzer.analyze([(p.chapter_no, p.text) for p in paras])
+
+        def on_progress(done: int, total: int) -> None:
+            doc.analysis_progress = 90 * done // total
+            db.commit()
+
+        results = llm_analyzer.analyze([(p.chapter_no, p.text) for p in paras], on_progress=on_progress)
         for p, r in zip(paras, results):
             p.profanity, p.sexual, p.violence = r["profanity"], r["sexual"], r["violence"]
             p.emotion = p.emotion_score = None
         if configured():
+            doc.analysis_progress = 95
+            db.commit()
             try:
                 doc.heaviness_ai, doc.heaviness_note = heaviness.rate_document(doc)
             except SummaryError as e:
@@ -46,7 +53,7 @@ def process(doc_id: int) -> None:
         doc.pct_profanity, doc.pct_sexual, doc.pct_violence = s["pct"]["profanity"], s["pct"]["sexual"], s["pct"]["violence"]
         doc.rating, doc.dominant_emotion = s["rating"], None
         doc.pct_adult, doc.heaviness = s["adult"], s["heaviness"]
-        doc.status, doc.analyzed_at = "done", datetime.utcnow()
+        doc.status, doc.analyzed_at, doc.analysis_progress = "done", datetime.utcnow(), 100
         db.commit()
         owner = db.get(User, doc.user_id)
         if owner is not None and has_tier(owner, "middle") and character_ai.available():

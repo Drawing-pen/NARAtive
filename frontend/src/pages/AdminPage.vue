@@ -1,25 +1,60 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import api from '@/lib/api'
-import { rupiah } from '@/lib/content'
+import { rupiah, formatDateTime } from '@/lib/content'
 
 const data = ref(null)
 const loading = ref(true)
 const forbidden = ref(false)
 const failed = ref(false)
+const yearChoice = ref('')
+const monthChoice = ref('')
+
+const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+const LAST30 = { mode: 'last30', label: '30 hari terakhir', granularity: 'day', tables_label: 'Seluruh waktu', available_years: [] }
+const period = computed(() => data.value?.period ?? LAST30)
 
 async function load() {
   loading.value = true
   forbidden.value = false
   failed.value = false
   try {
-    data.value = (await api.get('/admin/overview')).data
+    const params = {}
+    if (yearChoice.value) params.year = Number(yearChoice.value)
+    if (yearChoice.value && monthChoice.value) params.month = Number(monthChoice.value)
+    data.value = (await (Object.keys(params).length ? api.get('/admin/overview', { params }) : api.get('/admin/overview'))).data
   } catch (e) {
     if (e?.response?.status === 403) forbidden.value = true
     else failed.value = true
   } finally {
     loading.value = false
   }
+}
+
+const orderInput = ref('')
+const check = ref(null)
+const checkBusy = ref(false)
+const checkError = ref('')
+const TX_LABEL = { paid: 'Dibayar', pending: 'Menunggu', failed: 'Gagal', expired: 'Kedaluwarsa', cancelled: 'Dibatalkan' }
+const statusText = (key) => (key ? (TX_LABEL[key] ?? key) : '-')
+
+async function runCheck(sync) {
+  const id = encodeURIComponent(orderInput.value)
+  checkBusy.value = true
+  checkError.value = ''
+  try {
+    check.value = (await (sync ? api.post(`/admin/payments/${id}/sync`) : api.get(`/admin/payments/${id}`))).data
+  } catch (e) {
+    if (!sync) check.value = null
+    checkError.value = e?.response?.status === 404 ? 'Pesanan tidak ditemukan.' : e?.response?.status === 403 ? 'Halaman ini khusus admin.' : 'Gagal memeriksa pesanan.'
+  } finally {
+    checkBusy.value = false
+  }
+}
+
+function changeYear() {
+  monthChoice.value = ''
+  load()
 }
 
 onMounted(load)
@@ -47,6 +82,7 @@ const DOCS = [
   ['queued', 'Antre'],
   ['uploaded', 'Terunggah'],
   ['failed', 'Gagal'],
+  ['not_novel', 'Bukan novel'],
 ]
 const JOBS = [
   ['done', 'Selesai'],
@@ -54,12 +90,26 @@ const JOBS = [
   ['failed', 'Gagal'],
 ]
 
-const cards = computed(() => [
-  { label: 'Total akun pengguna', value: data.value.users.total, note: `${data.value.users.inactive} tidak aktif` },
-  { label: 'Pendapatan bulan ini', value: rupiah(data.value.revenue.paid_this_month), note: `Total ${rupiah(data.value.revenue.paid_total)}` },
-  { label: 'Total e-book', value: data.value.documents.total, note: `${data.value.documents.by_status.failed} gagal dianalisis` },
-  { label: 'Mentok kuota bulan ini', value: data.value.quota.at_limit, note: 'Standard dan Middle' },
-])
+const cards = computed(() => {
+  const d = data.value
+  const p = period.value
+  const running = p.mode === 'last30'
+  const quotaLabel = running ? 'Mentok kuota bulan ini' : p.mode === 'month' ? `Mentok kuota ${p.label}` : 'Mentok kuota'
+  return [
+    {
+      label: 'Total akun pengguna',
+      value: d.users.total,
+      note: running ? `${d.users.inactive} tidak aktif` : `${d.users.inactive} tidak aktif, ${d.users.registered ?? 0} pendaftar ${p.label}`,
+    },
+    {
+      label: running ? 'Pendapatan bulan ini' : `Pendapatan ${p.label}`,
+      value: rupiah(running ? d.revenue.paid_this_month : d.revenue.paid_in_period ?? 0),
+      note: `Total ${rupiah(d.revenue.paid_total)}`,
+    },
+    { label: 'Total e-book', value: d.documents.total, note: `${d.documents.by_status.failed} gagal dianalisis` },
+    { label: quotaLabel, value: d.quota.at_limit ?? '-', note: p.mode === 'year' ? 'Pilih satu bulan' : 'Standard dan Middle' },
+  ]
+})
 
 function chart(series, key, label, format) {
   const total = series.reduce((sum, d) => sum + d[key], 0)
@@ -67,7 +117,7 @@ function chart(series, key, label, format) {
   return {
     label,
     total: format(total),
-    aria: `${label} 30 hari terakhir: total ${format(total)}`,
+    aria: `${label} ${period.value.label}: total ${format(total)}`,
     bars: series.map((d) => ({ date: d.date, value: d[key], text: format(d[key]), pct: Math.round((d[key] / max) * 100) })),
   }
 }
@@ -78,7 +128,8 @@ const charts = computed(() => [
   chart(data.value.documents.uploads, 'count', 'Unggahan', (n) => String(n)),
 ])
 
-const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+const dayLabel = (iso) =>
+  new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', period.value.granularity === 'month' ? { month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' })
 </script>
 
 <template>
@@ -111,6 +162,29 @@ const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('id-ID'
     </p>
 
     <template v-else-if="data">
+      <section class="card flex flex-wrap items-end gap-4 p-5" aria-label="Periode">
+        <div class="space-y-1.5">
+          <label for="periode-tahun" class="text-sm font-semibold text-navy">Tahun</label>
+          <select id="periode-tahun" v-model="yearChoice" class="input !pl-3" :disabled="loading" @change="changeYear">
+            <option value="">30 hari terakhir</option>
+            <option v-for="y in period.available_years" :key="y" :value="String(y)">{{ y }}</option>
+          </select>
+        </div>
+        <div class="space-y-1.5">
+          <label for="periode-bulan" class="text-sm font-semibold text-navy">Bulan</label>
+          <select id="periode-bulan" v-model="monthChoice" class="input !pl-3" :disabled="loading || !yearChoice" @change="load()">
+            <option value="">Semua bulan</option>
+            <option v-for="(name, i) in MONTHS" :key="name" :value="String(i + 1)">{{ name }}</option>
+          </select>
+        </div>
+        <p class="pb-2 text-sm text-muted">Menampilkan: <span class="font-semibold text-navy">{{ period.label }}</span></p>
+      </section>
+
+      <p v-if="failed" role="alert" class="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2.5 text-sm text-danger">
+        <Icon icon="lucide:circle-alert" class="mt-0.5 size-4 shrink-0" />
+        Gagal memuat periode yang dipilih.
+      </p>
+
       <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Ringkasan">
         <article v-for="c in cards" :key="c.label" class="card space-y-1 p-5">
           <p class="text-xs font-semibold tracking-wide text-muted uppercase">{{ c.label }}</p>
@@ -129,7 +203,7 @@ const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('id-ID'
         </ul>
       </section>
 
-      <section class="grid gap-5 lg:grid-cols-3" aria-label="Grafik 30 hari">
+      <section class="grid gap-5 lg:grid-cols-3" :aria-label="`Grafik ${period.label}`">
         <article v-for="c in charts" :key="c.label" class="card space-y-3 p-5">
           <div class="flex items-baseline justify-between gap-2">
             <h2 class="text-lg font-semibold">{{ c.label }}</h2>
@@ -148,6 +222,7 @@ const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('id-ID'
       <section class="grid gap-5 lg:grid-cols-2">
         <article class="card space-y-3 p-5">
           <h2 class="text-lg font-semibold">Transaksi</h2>
+          <p class="text-xs text-muted">Periode: {{ period.tables_label }}</p>
           <table class="w-full text-sm">
             <tbody class="divide-y divide-line">
               <tr v-for="[key, label] in TX" :key="key">
@@ -170,6 +245,7 @@ const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('id-ID'
 
         <article class="card space-y-3 p-5">
           <h2 class="text-lg font-semibold">E-book</h2>
+          <p class="text-xs text-muted">Periode: {{ period.tables_label }}</p>
           <table class="w-full text-sm">
             <tbody class="divide-y divide-line">
               <tr v-for="[key, label] in DOCS" :key="key">
@@ -188,6 +264,48 @@ const dayLabel = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('id-ID'
             </div>
           </div>
         </article>
+      </section>
+
+      <section class="card space-y-4 p-5" aria-label="Periksa pembayaran">
+        <div class="space-y-1">
+          <h2 class="text-lg font-semibold">Periksa pembayaran</h2>
+          <p class="text-sm text-muted">Masukkan nomor pesanan dari invoice atau riwayat pengguna. Hasilnya hanya status dan nominal, tanpa data pribadi.</p>
+        </div>
+        <form class="flex flex-wrap items-center gap-2" @submit.prevent="runCheck(false)">
+          <label for="cek-pesanan" class="sr-only">Nomor pesanan</label>
+          <input id="cek-pesanan" v-model.trim="orderInput" type="text" autocomplete="off" placeholder="NAR-..." class="input min-w-0 flex-1 !pl-3" />
+          <button type="submit" class="btn btn-primary btn-sm" :disabled="!orderInput || checkBusy">
+            <Icon :icon="checkBusy ? 'lucide:loader-circle' : 'lucide:search'" class="size-4" :class="{ 'animate-spin': checkBusy }" />
+            Periksa
+          </button>
+        </form>
+        <p v-if="checkError" role="alert" data-test="check-error" class="rounded-lg bg-danger/10 px-3 py-2.5 text-sm text-danger">{{ checkError }}</p>
+        <div v-if="check" data-test="check-result" class="space-y-3">
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div data-test="check-local" class="rounded-lg bg-paper px-4 py-3 text-sm">
+              <p class="font-semibold text-navy">Di NARAtive</p>
+              <p class="flex justify-between text-muted"><span>Status</span><span class="text-navy">{{ statusText(check.local_status) }}</span></p>
+              <p class="flex justify-between text-muted"><span>Nominal</span><span class="text-navy">{{ rupiah(check.local_amount) }}</span></p>
+              <p class="flex justify-between text-muted"><span>Metode</span><span class="text-navy">{{ check.local_method ?? '-' }}</span></p>
+              <p class="flex justify-between text-muted"><span>Dibuat</span><span class="text-navy">{{ formatDateTime(check.created_at) }}</span></p>
+              <p v-if="check.paid_at" class="flex justify-between text-muted"><span>Dibayar</span><span class="text-navy">{{ formatDateTime(check.paid_at) }}</span></p>
+            </div>
+            <div data-test="check-gateway" class="rounded-lg bg-paper px-4 py-3 text-sm">
+              <p class="font-semibold text-navy">Di Midtrans</p>
+              <p v-if="!check.gateway.checked" class="text-muted">Tidak diperiksa</p>
+              <template v-else>
+                <p class="flex justify-between text-muted"><span>Status</span><span class="text-navy">{{ statusText(check.gateway.status) }} ({{ check.gateway.raw_status ?? '-' }})</span></p>
+                <p class="flex justify-between text-muted"><span>Nominal</span><span class="text-navy">{{ check.gateway.amount === null ? '-' : rupiah(check.gateway.amount) }}</span></p>
+                <p class="flex justify-between text-muted"><span>Metode</span><span class="text-navy">{{ check.gateway.method ?? '-' }}</span></p>
+              </template>
+            </div>
+          </div>
+          <p data-test="check-message" role="status" class="text-sm text-navy">{{ check.message }}</p>
+          <button v-if="check.can_sync" type="button" data-test="sync" class="btn btn-accent btn-sm" :disabled="checkBusy" @click="runCheck(true)">
+            <Icon icon="lucide:refresh-cw" class="size-4" />
+            Sinkronkan
+          </button>
+        </div>
       </section>
 
       <section class="card space-y-3 p-5" aria-label="Alasan gagal">

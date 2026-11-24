@@ -3,9 +3,11 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { errorMessage } from '@/lib/api'
 import { hasTier } from '@/lib/auth'
 import { showUpgrade } from '@/lib/upgrade'
-import { RATINGS, UPCOMING, formatDate, num } from '@/lib/content'
+import { LOADING_TIPS, RATINGS, UPCOMING, formatDate, num } from '@/lib/content'
 import AuthImage from '@/components/AuthImage.vue'
+import NotNovelNotice from '@/components/NotNovelNotice.vue'
 import PictureControls from '@/components/PictureControls.vue'
+import ProgressLoader from '@/components/ProgressLoader.vue'
 import RatingBadge from '@/components/RatingBadge.vue'
 import SoonButton from '@/components/SoonButton.vue'
 import StatusChip from '@/components/StatusChip.vue'
@@ -246,29 +248,28 @@ onBeforeUnmount(() => clearInterval(timer))
       </section>
 
       <!-- Sedang dibaca -->
-      <section v-if="doc.status === 'reading'" class="card grid place-items-center gap-4 px-6 py-16 text-center">
-        <Icon icon="lucide:loader-circle" class="size-12 animate-spin text-navy" />
-        <div class="space-y-1">
-          <h2 class="text-2xl font-semibold">Membaca berkas</h2>
-          <p class="max-w-md text-sm text-muted">
-            Membaca halaman {{ doc.read_pages }} dari {{ doc.page_count }}. Halaman ini memperbarui diri otomatis, jadi kamu boleh menunggu di sini.
-          </p>
-        </div>
-        <div class="h-2 w-full max-w-md overflow-hidden rounded-full bg-sand" role="progressbar" aria-label="Progres membaca berkas" :aria-valuenow="doc.read_pages" aria-valuemin="0" :aria-valuemax="doc.page_count">
-          <div class="h-full rounded-full bg-amber transition-all duration-500" :style="{ width: `${doc.page_count ? Math.min(100, Math.round((doc.read_pages / doc.page_count) * 100)) : 0}%` }" />
-        </div>
+      <section v-if="doc.status === 'reading'" class="card grid place-items-center px-6 py-14">
+        <ProgressLoader
+          :percent="doc.progress"
+          title="Membaca berkas"
+          :detail="`Membaca halaman ${doc.read_pages} dari ${doc.page_count}. Halaman ini memperbarui diri otomatis, jadi kamu boleh menunggu di sini.`"
+          :tips="LOADING_TIPS.reading"
+        />
       </section>
 
       <!-- Sedang diproses -->
-      <section v-else-if="doc.status === 'queued' || doc.status === 'analyzing'" class="card grid place-items-center gap-4 px-6 py-16 text-center">
-        <Icon icon="lucide:loader-circle" class="size-12 animate-spin text-navy" />
-        <div class="space-y-1">
-          <h2 class="text-2xl font-semibold">{{ doc.status === 'queued' ? 'Menunggu giliran' : 'Sedang diproses' }}</h2>
-          <p class="max-w-md text-sm text-muted">
-            Perkiraan selesai {{ estimate(doc.estimated_seconds) }}. Halaman ini memperbarui diri otomatis, jadi kamu boleh menunggu di sini.
-          </p>
-        </div>
+      <section v-else-if="doc.status === 'queued' || doc.status === 'analyzing'" class="card grid place-items-center px-6 py-14">
+        <ProgressLoader
+          :percent="doc.progress"
+          :title="doc.status === 'queued' ? 'Menunggu giliran' : 'Sedang diproses'"
+          :detail="`Perkiraan selesai ${estimate(doc.estimated_seconds)}. Halaman ini memperbarui diri otomatis, jadi kamu boleh menunggu di sini.`"
+          :tips="LOADING_TIPS.analysis"
+          icon="lucide:scan-text"
+        />
       </section>
+
+      <!-- Bukan novel -->
+      <NotNovelNotice v-else-if="doc.status === 'not_novel'" :id="id" :link="false" />
 
       <!-- Gagal -->
       <section v-else-if="doc.status === 'failed'" class="card grid place-items-center gap-4 px-6 py-14 text-center">

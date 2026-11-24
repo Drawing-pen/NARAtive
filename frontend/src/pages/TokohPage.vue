@@ -5,7 +5,9 @@ import AuthImage from '@/components/AuthImage.vue'
 import PictureControls from '@/components/PictureControls.vue'
 import TierLock from '@/components/TierLock.vue'
 import { useCharacters } from '@/lib/characters'
-import { initials } from '@/lib/content'
+import NotNovelNotice from '@/components/NotNovelNotice.vue'
+import ProgressLoader from '@/components/ProgressLoader.vue'
+import { LOADING_TIPS, initials } from '@/lib/content'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -43,8 +45,10 @@ function photoChanged(c, has) {
         {{ error }}
       </p>
 
+      <NotNovelNotice v-if="doc.status === 'not_novel'" :id="id" />
+
       <TierLock
-        v-if="locked"
+        v-else-if="locked"
         tier="middle"
         title="Fitur khusus Middle Tier"
         text="Deteksi tokoh dan relasi tersedia untuk pengguna Middle Tier ke atas. Hasil yang sudah pernah dibuat tetap bisa dilihat."
@@ -71,12 +75,14 @@ function photoChanged(c, has) {
         </button>
       </section>
 
-      <section v-else-if="data.status === 'running'" class="card grid place-items-center gap-4 px-6 py-16 text-center">
-        <Icon icon="lucide:loader-circle" class="size-12 animate-spin text-navy" />
-        <div class="space-y-1">
-          <h2 class="text-2xl font-semibold">Sedang mendeteksi tokoh</h2>
-          <p class="max-w-md text-sm text-muted">Halaman ini memperbarui diri otomatis saat hasilnya siap.</p>
-        </div>
+      <section v-else-if="data.status === 'running'" class="card grid place-items-center px-6 py-14">
+        <ProgressLoader
+          :percent="data.progress"
+          title="Sedang mendeteksi tokoh"
+          detail="Halaman ini memperbarui diri otomatis saat hasilnya siap."
+          :tips="LOADING_TIPS.characters"
+          icon="lucide:users"
+        />
       </section>
 
       <section v-else-if="data.status === 'failed'" class="card grid place-items-center gap-4 px-6 py-14 text-center">

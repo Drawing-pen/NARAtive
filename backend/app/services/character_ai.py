@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from app.core.config import settings
@@ -254,13 +254,24 @@ def _safe_read(chunk: Chunk) -> dict | None:
         return None
 
 
-def _read_all(chunks: list[Chunk]) -> list[dict | None]:
+def _read_all(chunks: list[Chunk], on_done=None) -> list[dict | None]:
     with ThreadPoolExecutor(max_workers=max(1, settings.character_parallel)) as pool:
-        return list(pool.map(_safe_read, chunks))
+        futures = [pool.submit(_safe_read, chunk) for chunk in chunks]
+        if on_done is not None:
+            for _ in as_completed(futures):
+                on_done()
+        return [future.result() for future in futures]
 
 
-def read_chunks(chunks: list[Chunk]) -> list[dict | None]:
-    results = _read_all(chunks)
+def read_chunks(chunks: list[Chunk], on_progress=None) -> list[dict | None]:
+    finished = 0
+
+    def one_done() -> None:
+        nonlocal finished
+        finished += 1
+        on_progress(finished, len(chunks))
+
+    results = _read_all(chunks, one_done if on_progress is not None else None)
     failed = [i for i, result in enumerate(results) if result is None]
     if failed:
         time.sleep(RETRY_WAIT)

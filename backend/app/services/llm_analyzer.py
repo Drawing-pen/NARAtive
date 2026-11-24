@@ -2,7 +2,7 @@
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -214,18 +214,29 @@ def _safe(chunk: Chunk) -> list[dict] | None:
         return None
 
 
-def _run(chunks: list[Chunk]) -> list[list[dict] | None]:
+def _run(chunks: list[Chunk], on_done=None) -> list[list[dict] | None]:
     with ThreadPoolExecutor(max_workers=max(1, settings.character_parallel)) as pool:
-        return list(pool.map(_safe, chunks))
+        futures = [pool.submit(_safe, chunk) for chunk in chunks]
+        if on_done is not None:
+            for _ in as_completed(futures):
+                on_done()
+        return [future.result() for future in futures]
 
 
-def analyze(items: list[tuple[int, str]]) -> list[dict]:
+def analyze(items: list[tuple[int, str]], on_progress=None) -> list[dict]:
     """items = [(nomor_bab, teks)] berurutan. Mengembalikan skor profanity, sexual, violence (0 sampai 1) per paragraf."""
     if not items:
         return []
     sent = make_chunks(items)
     chunks = [_sanitized(c) for c in sent]
-    results = _run(chunks)
+    finished = 0
+
+    def one_done() -> None:
+        nonlocal finished
+        finished += 1
+        on_progress(finished, len(chunks))
+
+    results = _run(chunks, one_done if on_progress is not None else None)
     failed = [i for i, r in enumerate(results) if r is None]
     if failed:
         time.sleep(RETRY_WAIT)

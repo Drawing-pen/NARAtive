@@ -1,6 +1,8 @@
 import logging
 import os
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,9 +10,18 @@ import pymupdf
 from wordfreq import zipf_frequency
 
 from app.core.config import settings
+from app.extraction import vision
 
 log = logging.getLogger("uvicorn.error")
 
+CONFIDENCE = 75.0
+MIN_WORDS = 10
+STANDARD_BINARIES = [
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    "/usr/bin/tesseract",
+    "/usr/local/bin/tesseract",
+]
 MIN_LETTERS = 25
 MIN_LETTER_SHARE = 0.5
 MAX_REPLACEMENT_SHARE = 0.1
@@ -72,6 +83,66 @@ def recognize(page) -> bytes:
     return pixmap.pdfocr_tobytes(language=usable_languages(), tessdata=tessdata_dir())
 
 
+def engine_mode() -> str:
+    return vision.mode()
+
+
+def tesseract_binary() -> str | None:
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    return next((path for path in STANDARD_BINARIES if os.path.isfile(path)), None)
+
+
+def parse_tsv(text: str) -> tuple[float | None, int]:
+    values = []
+    for line in text.splitlines()[1:]:
+        columns = line.split("\t")
+        if len(columns) < 12 or columns[0] != "5" or not columns[11].strip():
+            continue
+        try:
+            confidence = float(columns[10])
+        except ValueError:
+            continue
+        if confidence >= 0:
+            values.append(confidence)
+    return (sum(values) / len(values), len(values)) if values else (None, 0)
+
+
+def measure(page) -> tuple[float | None, int]:
+    binary = tesseract_binary()
+    languages = usable_languages()
+    if binary is None or not languages:
+        return None, 0
+    command = [binary, "stdin", "stdout", "-l", languages]
+    folder = tessdata_dir()
+    if folder:
+        command += ["--tessdata-dir", folder]
+    command.append("tsv")
+    png = page.get_pixmap(dpi=settings.ocr_dpi, alpha=False).tobytes("png")
+    done = subprocess.run(command, input=png, capture_output=True, timeout=settings.ocr_timeout)
+    if done.returncode != 0:
+        return None, 0
+    return parse_tsv(done.stdout.decode("utf-8", "replace"))
+
+
+@dataclass
+class PageRead:
+    pdf: bytes
+    confidence: float | None = None
+    words: int = 0
+
+    @property
+    def low(self) -> bool:
+        return self.confidence is not None and self.words >= MIN_WORDS and self.confidence < CONFIDENCE
+
+
+def read_tesseract(page) -> PageRead:
+    data = recognize(page)
+    confidence, words = measure(page)
+    return PageRead(data, confidence, words)
+
+
 def _words_known(text: str) -> tuple[int, int]:
     words = _WORD.findall(text.lower())
     known = sum(1 for w in words if zipf_frequency(w, "id") > 0 or zipf_frequency(w, "en") > 0)
@@ -95,6 +166,8 @@ class Prepared:
     known_words: int = 0
     total_words: int = 0
     stopped: bool = False
+    vision_pages: int = 0
+    low_confidence_pages: int = 0
 
     @property
     def quality(self) -> float | None:
@@ -105,31 +178,88 @@ class Prepared:
 
 def prepare_pdf(source: str, destination: str, on_page=None, should_stop=None) -> Prepared:
     ready = ocr_ready()
+    mode = engine_mode()
+    use_vision = vision.available()
     with pymupdf.open(source) as src:
         result = Prepared(path=source, pages=len(src))
         replacements: dict[int, bytes] = {}
+        waiting: list[tuple[int, PageRead | None]] = []
+        finished = 0
+
+        def finish() -> None:
+            nonlocal finished
+            finished += 1
+            if on_page is not None:
+                on_page(finished)
+
+        def keep(index: int, data: bytes) -> None:
+            with pymupdf.open("pdf", data) as recognised:
+                known, total = _words_known(recognised[0].get_text("text"))
+            replacements[index] = data
+            result.ocr_pages += 1
+            result.known_words += known
+            result.total_words += total
+
+        def use_tesseract(index: int, read: PageRead | None) -> None:
+            try:
+                if read is None:
+                    if not ready:
+                        result.skipped += 1
+                        return
+                    read = read_tesseract(src[index])
+                keep(index, read.pdf)
+                result.low_confidence_pages += int(read.low)
+            except Exception as error:
+                log.warning("OCR halaman %d dilewati: %s", index + 1, error)
+                result.skipped += 1
+
         for index in range(result.pages):
             if should_stop is not None and should_stop():
                 result.stopped = True
                 return result
-            page = src[index]
-            if page_needs_ocr(page.get_text("text")):
-                if not ready:
-                    result.skipped += 1
-                else:
+            if page_needs_ocr(src[index].get_text("text")):
+                rescuable = use_vision and len(waiting) < settings.vision_max_pages
+                if rescuable and (mode == "router" or not ready):
+                    waiting.append((index, None))
+                    continue
+                read = None
+                if ready:
                     try:
-                        data = recognize(page)
-                        with pymupdf.open("pdf", data) as recognised:
-                            known, total = _words_known(recognised[0].get_text("text"))
-                        replacements[index] = data
-                        result.ocr_pages += 1
-                        result.known_words += known
-                        result.total_words += total
+                        read = read_tesseract(src[index])
                     except Exception as error:
                         log.warning("OCR halaman %d dilewati: %s", index + 1, error)
-                        result.skipped += 1
-            if on_page is not None:
-                on_page(index + 1)
+                if read is not None and rescuable and read.low:
+                    waiting.append((index, read))
+                    continue
+                if read is not None:
+                    use_tesseract(index, read)
+                else:
+                    result.skipped += 1
+            finish()
+        if waiting:
+            try:
+                images = [vision.render(src[index]) for index, _ in waiting]
+            except Exception as error:
+                log.warning("Halaman tidak bisa dijadikan gambar untuk dibaca ulang: %s", error)
+                images = None
+            for group in vision.groups([len(i) for i in images]) if images is not None else [list(range(len(waiting)))]:
+                if should_stop is not None and should_stop():
+                    result.stopped = True
+                    return result
+                texts = vision.transcribe_group([images[k] for k in group]) if images is not None else [None] * len(group)
+                for k, text in zip(group, texts):
+                    index, fallback = waiting[k]
+                    if text:
+                        try:
+                            page = src[index]
+                            keep(index, vision.text_page(page.rect.width, page.rect.height, text))
+                            result.vision_pages += 1
+                            finish()
+                            continue
+                        except Exception as error:
+                            log.warning("Hasil pembacaan gambar halaman %d tidak bisa dipakai: %s", index + 1, error)
+                    use_tesseract(index, fallback)
+                    finish()
         if not replacements:
             return result
         with pymupdf.open() as out:

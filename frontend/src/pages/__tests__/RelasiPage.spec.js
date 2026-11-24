@@ -92,9 +92,19 @@ describe('RelasiPage keadaan', () => {
     expect(start).toHaveBeenCalledTimes(1)
   })
 
+  it('dokumen bukan novel terkunci dengan pesan khusus', async () => {
+    setup({ doc: ref({ ...DOC, status: 'not_novel' }), data: ref({ status: null, characters: [], relations: [] }) })
+    const w = await open()
+    expect(w.text()).toContain('Dokumen ini bukan novel')
+    expect(w.text()).not.toContain('setelah analisis buku ini selesai')
+  })
+
   it('sedang berjalan', async () => {
-    setup({ data: ref({ status: 'running', characters: [], relations: [] }) })
-    expect((await open()).text()).toContain('Sedang mendeteksi tokoh')
+    setup({ data: ref({ status: 'running', progress: 48, characters: [], relations: [] }) })
+    const w = await open()
+    expect(w.text()).toContain('Sedang mendeteksi tokoh')
+    expect(w.find('[data-test="percent"]').text()).toBe('48%')
+    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('48')
   })
 
   it('gagal menawarkan coba lagi', async () => {

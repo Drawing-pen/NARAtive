@@ -5,6 +5,7 @@ from html import escape
 from app.core.config import settings
 from app.core.plans import PERIOD_DAYS, PLAN_LABEL
 from app.db.models import Transaction, User
+from app.services import invoice as invoice_service
 
 NAVY = "#24365f"
 AMBER = "#efb54d"
@@ -211,22 +212,22 @@ def payment_instructions(user: User, tx: Transaction) -> Email:
 
 
 def invoice(user: User, tx: Transaction) -> Email:
-    history = site_url("/profil#riwayat")
+    page = site_url(f"/invoice/{tx.order_id}")
     rows = [
         ("No. pesanan", tx.order_id),
         ("Item", item_label(tx)),
         ("Total", money(tx.amount)),
-        ("Bank (VA)", f"{tx.bank.upper()} {tx.va_number}"),
+        ("Metode pembayaran", invoice_service.method_label(tx)),
         ("Dibayar", wib(tx.paid_at)),
     ]
     if tx.kind == "upgrade" and user.tier_expires_at:
         rows.append(("Aktif sampai", wib_date(user.tier_expires_at)))
-    detail = "\n".join(f"{label:<12}: {value}" for label, value in rows)
+    detail = "\n".join(f"{label:<18}: {value}" for label, value in rows)
     text = _text(
         f"Halo {user.name},",
         "Terima kasih, pembayaranmu di NARAtive sudah kami terima.",
         detail,
-        f"Riwayat pembayaran: {history}",
+        f"Lihat dan unduh invoice: {page}",
     )
     html = _page(
         "Invoice NARAtive",
@@ -235,6 +236,6 @@ def invoice(user: User, tx: Transaction) -> Email:
         + _paragraph(f"Halo {user.name},")
         + _paragraph("Terima kasih, pembayaranmu di NARAtive sudah kami terima. Berikut rincian invoice-mu.")
         + _rows(rows)
-        + _button("Lihat riwayat pembayaran", history),
+        + _button("Lihat invoice", page),
     )
     return Email(f"Invoice NARAtive {tx.order_id}", text, html)

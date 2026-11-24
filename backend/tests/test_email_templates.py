@@ -194,17 +194,23 @@ class TestInvoice:
     def test_it_lists_the_order_details(self, db, user):
         mail = templates.invoice(user, self.paid(db, user))
         for body in (mail.text, visible_text(mail.html)):
-            for fragment in ("NAR-1-abc123", "Paket Middle (30 hari)", "Rp 29.000", "BNI 8810123456789012", "28-10-2026 10:30 WIB", "27-11-2026"):
+            for fragment in ("NAR-1-abc123", "Paket Middle (30 hari)", "Rp 29.000", "Virtual Account BNI", "28-10-2026 10:30 WIB", "27-11-2026"):
                 assert fragment in body, fragment
+
+    def test_it_never_shows_the_payment_code(self, db, user):
+        mail = templates.invoice(user, self.paid(db, user))
+        assert "8810123456789012" not in mail.text and "8810123456789012" not in mail.html
 
     def test_extra_analyses_have_no_end_date(self, db, user):
         mail = templates.invoice(user, self.paid(db, user, kind="pay_per_check", plan=None, quantity=3, amount=15000))
         assert "Aktif sampai" not in mail.text and "Aktif sampai" not in visible_text(mail.html)
         assert "3 analisis tambahan" in mail.text
 
-    def test_it_links_to_the_history(self, db, user):
+    def test_it_links_to_the_invoice_page(self, db, user):
         mail = templates.invoice(user, self.paid(db, user))
-        assert "https://narative.example.com/profil#riwayat" in parse(mail.html).links
+        assert "https://narative.example.com/invoice/NAR-1-abc123" in parse(mail.html).links
+        assert "https://narative.example.com/invoice/NAR-1-abc123" in mail.text
+        assert "Lihat invoice" in visible_text(mail.html)
 
     def test_the_user_name_is_escaped(self, db, user):
         user.name = "<i>Rana</i>"

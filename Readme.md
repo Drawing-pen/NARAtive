@@ -218,6 +218,8 @@ API tersedia di `http://localhost:8000`, dokumentasi interaktif di `http://local
 
 PDF yang berisi gambar halaman (hasil scan) dibaca otomatis lewat OCR di server; pengguna cukup mengunggah. Agar ini berjalan di komputer lokal, pasang Tesseract (Windows: installer UB Mannheim) dan centang paket bahasa **Indonesian** dan English. Folder `tessdata` dicari otomatis (`TESSDATA_DIR`, `TESSDATA_PREFIX`, atau lokasi standar seperti `C:\Program Files\Tesseract-OCR\tessdata`). Tanpa Tesseract, PDF teks tetap berjalan normal dan PDF scan gagal diproses dengan pesan yang jelas. Image Docker sudah memasangnya.
 
+Halaman scan yang hasil Tesseract-nya berkeyakinan rendah (misalnya tulisan tangan) dibaca ulang lewat model vision di 9router (Gemini sebagai cadangan), maksimal `VISION_MAX_PAGES` halaman per dokumen; mesinnya diatur lewat `OCR_ENGINE` (`auto`, `tesseract`, `router`). **Privasi:** gambar halaman utuh dikirim ke penyedia LLM tersebut, jadi teks eksplisit di halaman itu ikut terkirim tanpa bisa disamarkan (pada `auto` hanya halaman berkeyakinan rendah; novel scan yang bersih tetap hanya lewat Tesseract). Untuk mematikannya, set `OCR_ENGINE=tesseract`.
+
 ### 3. Frontend
 
 ```bat

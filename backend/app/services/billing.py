@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -8,6 +9,10 @@ from app.core.plans import LIMITS, PAY_PER_CHECK_PRICE, PERIOD_DAYS, PLAN_LABEL,
 from app.db.models import Document, Transaction, UsageQuota, User
 from app.services import email_templates, mailer, payments
 
+log = logging.getLogger("uvicorn.error")
+
+RECHECK_DAYS = 7
+FINAL_STATUSES = ("expired", "cancelled", "failed")
 TIER_RANK = {"free": 0, "middle": 1, "high": 2}
 MONTHS_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 
@@ -33,7 +38,7 @@ def used_this_month(db: Session, user: User) -> int:
 
 
 def active_books(db: Session, user: User) -> int:
-    return db.scalar(select(func.count()).select_from(Document).where(Document.user_id == user.id, Document.status != "failed")) or 0
+    return db.scalar(select(func.count()).select_from(Document).where(Document.user_id == user.id, Document.status.notin_(("failed", "not_novel")))) or 0
 
 
 def books_being_read(db: Session, user: User) -> int:
@@ -88,41 +93,121 @@ def price_for(kind: str, plan: str | None, quantity: int) -> int:
     return UPGRADE_PRICE[plan] if kind == "upgrade" else PAY_PER_CHECK_PRICE * quantity
 
 
-def _reconcile(db: Session, tx: Transaction) -> None:
+def _gateway_amount(data: dict) -> int | None:
+    if data.get("gross_amount") is None:
+        return None
+    try:
+        return int(float(data["gross_amount"]))
+    except (TypeError, ValueError):
+        return None
+
+
+def _reconcile(db: Session, tx: Transaction, only_paid: bool = False) -> None:
     try:
         data = payments.fetch_status(tx.order_id)
     except payments.PaymentError:
         return
     new_status = payments.map_status(str(data.get("transaction_status", "")))
     if new_status == "paid":
-        try:
-            if int(float(data.get("gross_amount", 0))) != tx.amount:
-                return
-        except (TypeError, ValueError):
+        amount = _gateway_amount(data)
+        if amount != tx.amount:
+            log.warning("Penelusuran %s ditolak: nominal Midtrans %s berbeda dari pesanan %s", tx.order_id, amount, tx.amount)
             return
-        settle(db, tx)
-    elif new_status:
+        settle(db, tx, data)
+    elif new_status and not only_paid:
         tx.status = new_status
         db.commit()
 
 
+def _midtrans_live(tx: Transaction) -> bool:
+    return tx.provider == "midtrans" and payments.provider() == "midtrans"
+
+
 def refresh(db: Session, tx: Transaction) -> Transaction:
-    """Transaksi Midtrans yang menunggu ditanyakan ke Midtrans (notifikasi bisa terlewat); VA yang lewat batas waktunya dianggap kedaluwarsa."""
-    if tx.status == "pending" and tx.provider == "midtrans" and payments.provider() == "midtrans":
-        _reconcile(db, tx)
+    """Transaksi Midtrans yang menunggu ditanyakan ke Midtrans (notifikasi bisa terlewat); status akhir yang baru juga dicek ulang
+    untuk pembayaran yang terlambat (R32); VA yang lewat batas waktunya dianggap kedaluwarsa."""
+    if _midtrans_live(tx):
+        if tx.status == "pending":
+            _reconcile(db, tx)
+        elif tx.status in FINAL_STATUSES and tx.created_at >= datetime.utcnow() - timedelta(days=RECHECK_DAYS):
+            _reconcile(db, tx, only_paid=True)
     if tx.status == "pending" and tx.expires_at <= datetime.utcnow():
         tx.status = "expired"
         db.commit()
     return tx
 
 
-def settle(db: Session, tx: Transaction) -> None:
+def recheck(db: Session, tx: Transaction) -> Transaction:
+    """Pemeriksaan atas permintaan pengguna (R32): tanpa batas umur pesanan."""
+    if tx.status != "paid" and _midtrans_live(tx):
+        _reconcile(db, tx, only_paid=tx.status != "pending")
+    if tx.status == "pending" and tx.expires_at <= datetime.utcnow():
+        tx.status = "expired"
+        db.commit()
+    return tx
+
+
+def _described(tx: Transaction, gateway: dict, message: str, can_sync: bool, applied: bool) -> dict:
+    return {
+        "order_id": tx.order_id, "provider": tx.provider, "kind": tx.kind, "plan": tx.plan, "quantity": tx.quantity,
+        "local_status": tx.status, "local_amount": tx.amount, "local_method": tx.payment_method,
+        "created_at": tx.created_at, "expires_at": tx.expires_at, "paid_at": tx.paid_at,
+        "gateway": gateway, "can_sync": can_sync, "applied": applied, "message": message,
+    }
+
+
+def _inspect(tx: Transaction) -> tuple[dict, dict | None]:
+    gateway = {"checked": False, "status": None, "raw_status": None, "amount": None, "method": None}
+    data = None
+    if tx.provider != "midtrans":
+        return _described(tx, gateway, "Pesanan ini berasal dari mode simulasi; tidak ada data di Midtrans.", False, False), None
+    if payments.provider() != "midtrans":
+        return _described(tx, gateway, "Kunci Midtrans belum diatur di server; pesanan tidak bisa diperiksa.", False, False), None
+    try:
+        data = payments.fetch_status(tx.order_id)
+    except payments.PaymentError:
+        return _described(tx, gateway, "Midtrans tidak merespons. Coba lagi sebentar lagi.", False, False), None
+    raw = str(data.get("transaction_status") or "") or None
+    gateway = {
+        "checked": True, "status": payments.map_status(raw or ""), "raw_status": raw,
+        "amount": _gateway_amount(data), "method": payments.method_label(data),
+    }
+    if gateway["status"] == "paid":
+        if tx.status == "paid":
+            return _described(tx, gateway, "Sudah tercatat berhasil dan sesuai dengan Midtrans.", False, False), data
+        if gateway["amount"] == tx.amount:
+            message = "Midtrans mencatat pembayaran ini lunas, tetapi di NARAtive belum berhasil. Tekan Sinkronkan untuk mencatatnya."
+            return _described(tx, gateway, message, True, False), data
+        message = "Midtrans mencatat lunas tetapi nominalnya berbeda dari pesanan. Periksa manual di dashboard Midtrans."
+        return _described(tx, gateway, message, False, False), data
+    if tx.status == "paid":
+        message = "Tercatat berhasil di NARAtive tetapi Midtrans tidak melaporkan lunas. Periksa di dashboard Midtrans."
+        return _described(tx, gateway, message, False, False), data
+    return _described(tx, gateway, "Midtrans belum mencatat pembayaran lunas untuk pesanan ini.", False, False), data
+
+
+def inspect(tx: Transaction) -> dict:
+    return _inspect(tx)[0]
+
+
+def sync(db: Session, tx: Transaction) -> dict:
+    result, data = _inspect(tx)
+    if not result["can_sync"]:
+        return result
+    settle(db, tx, data)
+    message = "Pembayaran dicatat berhasil; paket atau analisis pengguna sudah diterapkan dan invoice dikirim."
+    return _described(tx, result["gateway"], message, False, True)
+
+
+def settle(db: Session, tx: Transaction, gateway: dict | None = None) -> None:
     """Pembayaran terkonfirmasi: terapkan hasil pembelian lalu kirim invoice. Aman dipanggil berulang (notifikasi ganda)."""
     if tx.status == "paid":
         return
     user = db.get(User, tx.user_id)
     now = datetime.utcnow()
     tx.status, tx.paid_at = "paid", now
+    if gateway:
+        tx.payment_method = payments.method_label(gateway) or tx.payment_method
     if tx.kind == "upgrade":
         active = user.paid_tier != "free" and user.tier_expires_at and user.tier_expires_at > now
         start = user.tier_expires_at if active else now

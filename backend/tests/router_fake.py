@@ -25,15 +25,24 @@ class Router:
 
     def __call__(self, req, timeout=None):
         payload = json.loads(req.data)
-        self.calls.append({
+        content = payload["messages"][-1]["content"]
+        images = []
+        if isinstance(content, list):
+            images = [part["image_url"]["url"] for part in content if part.get("type") == "image_url"]
+            content = "".join(part.get("text", "") for part in content if part.get("type") == "text")
+        call = {
             "url": req.full_url,
             "auth": req.get_header("Authorization"),
             "body": payload,
-            "prompt": payload["messages"][-1]["content"],
+            "prompt": content,
+            "images": images,
             "system": payload["messages"][0]["content"],
             "timeout": timeout,
-        })
+        }
+        self.calls.append(call)
         step = self.steps.pop(0) if self.steps else self.default
+        if callable(step):
+            step = step(call)
         kind = step[0]
         if kind == "text":
             body = {"choices": [{"message": {"content": step[1]}, "finish_reason": "stop"}],

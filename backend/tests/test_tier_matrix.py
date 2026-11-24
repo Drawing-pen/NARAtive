@@ -219,7 +219,7 @@ def test_standard_can_build_series_and_delete(client, make_user, make_doc, auth)
 def test_automatic_character_detection_only_for_middle_and_above(make_user, make_doc, monkeypatch, tier, expires, runs):
     from app.services import jobs
     calls = []
-    monkeypatch.setattr(jobs.llm_analyzer, "analyze", lambda items: [{"profanity": 0.0, "sexual": 0.0, "violence": 0.0} for _ in items])
+    monkeypatch.setattr(jobs.llm_analyzer, "analyze", lambda items, **kwargs: [{"profanity": 0.0, "sexual": 0.0, "violence": 0.0} for _ in items])
     monkeypatch.setattr(jobs, "configured", lambda: False)
     monkeypatch.setattr(jobs.characters, "run", lambda doc_id, ai=False: calls.append(doc_id))
     user = make_user(tier, expires_at={"future": future(), "past": past(), None: None}[expires])

@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import re
@@ -160,7 +161,7 @@ def _lower_types(node):
     return node
 
 
-def _router_generate(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, purpose: str) -> str:
+def _router_generate(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, purpose: str, images: list[bytes] | None = None) -> str:
     key = settings.router_api_key.strip()
     model = settings.router_model.strip()
     payload = {"model": model, "stream": False, "temperature": temperature, "max_tokens": max_tokens}
@@ -168,7 +169,12 @@ def _router_generate(prompt: str, system: str, schema: dict | None, temperature:
         system += ("\n\nKeluarkan HANYA satu objek JSON valid (tanpa pagar kode atau teks lain) yang sesuai skema berikut:\n"
                    + json.dumps(_lower_types(schema), ensure_ascii=False))
         payload["response_format"] = {"type": "json_object"}
-    payload["messages"] = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+    content = prompt
+    if images:
+        content = [{"type": "text", "text": prompt}] + [
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")}} for image in images
+        ]
+    payload["messages"] = [{"role": "system", "content": system}, {"role": "user", "content": content}]
     req = urllib.request.Request(
         settings.router_base_url.strip().rstrip("/") + "/chat/completions", data=json.dumps(payload).encode("utf-8"), method="POST",
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
@@ -214,19 +220,19 @@ def _router_generate(prompt: str, system: str, schema: dict | None, temperature:
     return text
 
 
-def _router_attempt(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, purpose: str) -> str:
+def _router_attempt(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, purpose: str, images: list[bytes] | None = None) -> str:
     try:
-        return _router_generate(prompt, system, schema, temperature, max_tokens, purpose)
+        return _router_generate(prompt, system, schema, temperature, max_tokens, purpose, images)
     except SummaryError as e:
         if not getattr(e, "retry", False):
             raise
         log.warning("9router gagal sementara (%s), mengulang sekali.", e)
         time.sleep(ROUTER_RETRY_WAIT)
-        return _router_generate(prompt, system, schema, temperature, max_tokens, purpose)
+        return _router_generate(prompt, system, schema, temperature, max_tokens, purpose, images)
 
 
 def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, temperature: float = 0.3, max_tokens: int = 2048,
-              prefer: str = "", purpose: str = "") -> str:
+              prefer: str = "", purpose: str = "", images: list[bytes] | None = None) -> str:
     global _router_blocked_until
     failure = None
     if router_active():
@@ -234,7 +240,7 @@ def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, tem
             failure = SummaryError("9router sedang ditahan sementara setelah gagal; coba lagi sebentar lagi.")
         else:
             try:
-                return _router_attempt(prompt, system, schema, temperature, max_tokens, purpose)
+                return _router_attempt(prompt, system, schema, temperature, max_tokens, purpose, images)
             except SummaryError as e:
                 failure = e
                 if getattr(e, "hold", True):
@@ -242,16 +248,18 @@ def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, tem
                 log.warning("9router gagal (%s)%s", e, ", memakai Gemini." if gemini_active() else ".")
     if failure is not None and not gemini_active():
         raise failure
-    return _generate_gemini(prompt, system, schema, temperature, max_tokens, prefer, purpose)
+    return _generate_gemini(prompt, system, schema, temperature, max_tokens, prefer, purpose, images)
 
 
-def _generate_gemini(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, prefer: str, purpose: str) -> str:
+def _generate_gemini(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, prefer: str, purpose: str,
+                     images: list[bytes] | None = None) -> str:
     config = {"temperature": temperature, "maxOutputTokens": max_tokens}
     if schema:
         config.update({"responseMimeType": "application/json", "responseSchema": schema})
+    parts = [{"text": prompt}] + [{"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(image).decode("ascii")}} for image in images or []]
     body = json.dumps({
         "systemInstruction": {"parts": [{"text": system}]},
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "contents": [{"role": "user", "parts": parts}],
         "generationConfig": config,
         "safetySettings": _SAFETY,
     }).encode("utf-8")

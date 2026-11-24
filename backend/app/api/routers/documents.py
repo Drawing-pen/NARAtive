@@ -17,7 +17,7 @@ from app.services.llm_analyzer import available as analysis_ready
 from app.db.models import Chapter, Character, CharacterRelation, Document, Paragraph, User
 from app.extraction.epub_utils import EpubError
 from app.extraction.reader import read_document
-from app.services import billing, images, rating as rating_service, reader_jobs
+from app.services import billing, doc_type, images, rating as rating_service, reader_jobs
 from app.services import characters as character_service
 from app.services import collections as collection_service
 from app.services import summarizer
@@ -99,21 +99,24 @@ def upload_document(
         if not paragraphs:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "File tidak berisi teks yang dapat dianalisis.")
         billing.ensure_can_upload(db, user, page_count)
+        novel = doc_type.classify([b.text for _, b in paragraphs]) == "novel"
 
         doc = Document(
             user_id=user.id,
             title=os.path.splitext(file.filename)[0][:255],
             filename=os.path.basename(file.filename)[:255],
             page_count=page_count,
-            paragraph_count=len(paragraphs),
-            status="queued",
+            paragraph_count=len(paragraphs) if novel else 0,
+            status="queued" if novel else "not_novel",
         )
-        doc.chapters = [Chapter(number=i + 1, title=t[:255]) for i, t in enumerate(chapter_titles)]
-        doc.paragraphs = [
-            Paragraph(idx=i, chapter_no=n, text=b.text, markdown=b.markdown, kind=b.kind) for i, (n, b) in enumerate(paragraphs)
-        ]
+        if novel:
+            doc.chapters = [Chapter(number=i + 1, title=t[:255]) for i, t in enumerate(chapter_titles)]
+            doc.paragraphs = [
+                Paragraph(idx=i, chapter_no=n, text=b.text, markdown=b.markdown, kind=b.kind) for i, (n, b) in enumerate(paragraphs)
+            ]
         db.add(doc)
-        billing.consume_analysis(db, user)    # satu transaksi dengan penyimpanan dokumen
+        if novel:
+            billing.consume_analysis(db, user)    # satu transaksi dengan penyimpanan dokumen
         db.commit()
     except HTTPException:
         raise
@@ -130,7 +133,8 @@ def upload_document(
         except OSError:
             log.warning("File sementara %s tidak bisa dihapus.", stored)
 
-    enqueue(doc.id)
+    if doc.status == "queued":
+        enqueue(doc.id)
     return doc
 
 
@@ -202,10 +206,14 @@ def get_paragraphs(doc_id: int, user: User = Depends(get_current_user), db: Sess
 
 
 def _summary_out(doc: Document) -> SummaryOut:
+    done = sum(1 for c in doc.chapters if c.summary)
+    total = len(doc.chapters)
+    progress = min(100, round(done / total * 100)) if total else 0
     return SummaryOut(
         status=doc.summary_status,
-        done_chapters=sum(1 for c in doc.chapters if c.summary),
-        total_chapters=len(doc.chapters),
+        progress=progress if doc.summary_status == "running" else None,
+        done_chapters=done,
+        total_chapters=total,
         overall=doc.summary,
         chapters=doc.chapters,
     )
@@ -251,7 +259,8 @@ def _characters_out(db: Session, doc: Document) -> CharactersOut:
         RelationOut(chapter=number, a=r.character_a_id, b=r.character_b_id, type=r.relation_type, weight=r.weight)
         for r, number in rows
     ]
-    return CharactersOut(status=doc.characters_status, characters=chars, relations=relations)
+    progress = min(100, max(0, doc.characters_progress or 0)) if doc.characters_status == "running" else None
+    return CharactersOut(status=doc.characters_status, progress=progress, characters=chars, relations=relations)
 
 
 @router.get("/{doc_id}/characters", response_model=CharactersOut)
@@ -270,7 +279,7 @@ def detect_characters(doc_id: int, user: User = Depends(require_tier("middle")),
     if not character_service.character_ai.available():
         raise HTTPException(status.HTTP_409_CONFLICT, "Deteksi tokoh butuh layanan AI (9router atau Gemini) di server.")
     if doc.characters_status != "running":
-        doc.characters_status = "running"
+        doc.characters_status, doc.characters_progress = "running", 0
         db.commit()
         character_service.start(doc.id)
     return _characters_out(db, doc)

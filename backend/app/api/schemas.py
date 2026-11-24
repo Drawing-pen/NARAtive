@@ -111,6 +111,7 @@ class DocumentOut(BaseModel):
     page_count: int
     status: str
     read_pages: int = 0
+    progress: int | None = None
     failure_reason: str | None = None
     rating: str | None
     pct_profanity: float | None
@@ -150,7 +151,7 @@ class CheckoutIn(BaseModel):
     kind: Literal["upgrade", "pay_per_check"]
     plan: Literal["middle", "high"] | None = None          # wajib untuk upgrade
     quantity: int = Field(1, ge=1, le=PAY_PER_CHECK_MAX)   # hanya untuk pay-per-check
-    bank: Literal["bca", "bni", "bri", "permata"]
+    bank: Literal["bca", "bni", "bri", "permata"] | None = None    # kosong = metode dipilih di dalam halaman (Snap, R30)
 
     @model_validator(mode="after")
     def _check_plan(self):
@@ -165,8 +166,10 @@ class TransactionOut(BaseModel):
     plan: str | None
     quantity: int
     amount: int
-    bank: str
-    va_number: str
+    bank: str | None = None
+    va_number: str | None = None
+    snap_token: str | None = None
+    payment_method: str | None = None
     provider: str
     status: str
     created_at: datetime
@@ -174,6 +177,32 @@ class TransactionOut(BaseModel):
     paid_at: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class SimulatePayIn(BaseModel):
+    method: Literal["bca", "bni", "bri", "permata", "qris", "gopay"] | None = None
+
+
+class InvoiceItemOut(BaseModel):
+    no: int
+    name: str
+    unit_price: int
+    quantity: int
+    total: int
+
+
+class InvoiceOut(BaseModel):
+    number: str
+    status: str
+    issued_at: datetime
+    due_at: datetime
+    paid_at: datetime
+    customer_name: str
+    customer_email: str
+    method: str
+    items: list[InvoiceItemOut]
+    subtotal: int
+    total: int
 
 
 class UsageOut(BaseModel):
@@ -197,6 +226,8 @@ class BillingOverview(BaseModel):
     pay_per_check_max: int
     banks: list[str]
     provider: str                     # simulated | midtrans | unavailable
+    snap_client_key: str | None = None
+    snap_script_url: str | None = None
 
 
 class DocumentRename(BaseModel):
@@ -272,6 +303,7 @@ class RelationOut(BaseModel):
 
 class CharactersOut(BaseModel):
     status: str | None
+    progress: int | None = None
     characters: list[CharacterOut]
     relations: list[RelationOut]
 
@@ -286,7 +318,8 @@ class ChapterSummaryOut(BaseModel):
 
 
 class SummaryOut(BaseModel):
-    status: str | None            
+    status: str | None
+    progress: int | None = None
     done_chapters: int
     total_chapters: int
     overall: str | None
@@ -306,6 +339,7 @@ class AdminUsers(BaseModel):
     total: int
     inactive: int
     per_tier: dict[str, int]
+    registered: int = 0
     signups: list[DayCount]
 
 
@@ -317,6 +351,7 @@ class PlanRevenue(BaseModel):
 class AdminRevenue(BaseModel):
     paid_total: int
     paid_this_month: int
+    paid_in_period: int = 0
     by_status: dict[str, int]
     by_plan: dict[str, PlanRevenue]
     per_day: list[DayAmount]
@@ -337,7 +372,43 @@ class AdminDocuments(BaseModel):
 
 
 class AdminQuota(BaseModel):
-    at_limit: int
+    at_limit: int | None
+
+
+class GatewaySide(BaseModel):
+    checked: bool
+    status: str | None
+    raw_status: str | None
+    amount: int | None
+    method: str | None
+
+
+class PaymentCheckOut(BaseModel):
+    order_id: str
+    provider: str
+    kind: str
+    plan: str | None
+    quantity: int
+    local_status: str
+    local_amount: int
+    local_method: str | None
+    created_at: datetime
+    expires_at: datetime
+    paid_at: datetime | None
+    gateway: GatewaySide
+    can_sync: bool
+    applied: bool
+    message: str
+
+
+class AdminPeriod(BaseModel):
+    mode: str
+    year: int | None
+    month: int | None
+    label: str
+    granularity: str
+    tables_label: str
+    available_years: list[int]
 
 
 class AdminOverviewOut(BaseModel):
@@ -345,4 +416,5 @@ class AdminOverviewOut(BaseModel):
     revenue: AdminRevenue
     documents: AdminDocuments
     quota: AdminQuota
+    period: AdminPeriod
     generated_at: datetime

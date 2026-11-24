@@ -46,10 +46,18 @@ def _base_url() -> str:
     return "https://api.midtrans.com" if settings.midtrans_is_production else "https://api.sandbox.midtrans.com"
 
 
-def _call(path: str, body: dict | None = None) -> dict:
+def snap_base() -> str:
+    return "https://app.midtrans.com" if settings.midtrans_is_production else "https://app.sandbox.midtrans.com"
+
+
+def snap_script_url() -> str:
+    return snap_base() + "/snap/snap.js"
+
+
+def _call(path: str, body: dict | None = None, base: str | None = None) -> dict:
     token = base64.b64encode(f"{settings.midtrans_server_key}:".encode()).decode()
     req = urllib.request.Request(
-        _base_url() + path,
+        (base or _base_url()) + path,
         data=json.dumps(body).encode() if body is not None else b"",
         headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Basic {token}"},
         method="POST",
@@ -81,6 +89,50 @@ def create_va(order_id: str, amount: int, bank: str) -> str:
     if not va:
         raise PaymentError("Nomor Virtual Account tidak diterima dari layanan pembayaran.")
     return str(va)
+
+
+def create_snap(order_id: str, amount: int, item_name: str, quantity: int = 1) -> str:
+    mode = provider()
+    if mode == "unavailable":
+        raise PaymentUnavailable("Pembayaran belum tersedia.")
+    if mode == "simulated":
+        return "SIM-" + secrets.token_hex(8)
+    if not settings.midtrans_client_key:
+        raise PaymentUnavailable("Pembayaran belum tersedia.")
+
+    data = _call("/snap/v1/transactions", {
+        "transaction_details": {"order_id": order_id, "gross_amount": amount},
+        "item_details": [{"id": "item-1", "price": amount // quantity, "quantity": quantity, "name": item_name}],
+        "expiry": {"unit": "hour", "duration": VA_TTL_HOURS},
+    }, base=snap_base())
+    token = data.get("token")
+    if not token:
+        raise PaymentError("Token pembayaran tidak diterima dari layanan pembayaran.")
+    return str(token)
+
+
+_METHOD_LABELS = {
+    "echannel": "Mandiri Bill", "qris": "QRIS", "gopay": "GoPay", "shopeepay": "ShopeePay", "credit_card": "Kartu kredit/debit",
+    "akulaku": "Akulaku", "kredivo": "Kredivo", "dana": "DANA",
+}
+SIM_METHODS = {
+    "bca": "Virtual Account BCA", "bni": "Virtual Account BNI", "bri": "Virtual Account BRI", "permata": "Virtual Account PERMATA",
+    "qris": "QRIS", "gopay": "GoPay",
+}
+
+
+def method_label(data: dict) -> str | None:
+    kind = str(data.get("payment_type") or "")
+    if not kind:
+        return None
+    if kind == "bank_transfer":
+        banks = data.get("va_numbers") or []
+        bank = (banks[0].get("bank") if banks else None) or ("permata" if data.get("permata_va_number") else None)
+        return f"Virtual Account {str(bank).upper()}" if bank else "Virtual Account"
+    if kind == "cstore":
+        store = data.get("store")
+        return f"Gerai {str(store).title()}" if store else "Gerai"
+    return _METHOD_LABELS.get(kind) or kind.replace("_", " ").title()
 
 
 def fetch_status(order_id: str) -> dict:

@@ -11,6 +11,7 @@ const router = createRouter({
     { path: '/profil', name: 'profile', component: () => import('@/pages/ProfilPage.vue'), meta: { requiresAuth: true } },
     { path: '/berlangganan', name: 'plans', component: () => import('@/pages/BerlanggananPage.vue') },
     { path: '/admin', name: 'admin', component: () => import('@/pages/AdminPage.vue'), meta: { requiresAuth: true, requiresAdmin: true } },
+    { path: '/invoice/:orderId', name: 'invoice', component: () => import('@/pages/InvoicePage.vue'), props: true, meta: { requiresAuth: true } },
     { path: '/bayar', name: 'checkout', component: () => import('@/pages/BayarPage.vue'), meta: { requiresAuth: true } },
     { path: '/bayar/:orderId', name: 'order', component: () => import('@/pages/BayarPage.vue'), props: true, meta: { requiresAuth: true } },
 

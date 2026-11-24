@@ -30,9 +30,9 @@ function summary(status, overrides = {}) {
   }
 }
 
-function serve(sum) {
+function serve(sum, doc = DOC) {
   get.mockImplementation(async (url) => {
-    if (url === '/documents/1') return { data: DOC }
+    if (url === '/documents/1') return { data: doc }
     if (url === '/documents/1/summary') return { data: sum }
     throw new Error(`url tak terduga: ${url}`)
   })
@@ -53,6 +53,43 @@ beforeEach(() => {
   get.mockReset()
   post.mockReset()
   allowed.middle = true
+})
+
+describe('rangkuman untuk dokumen yang bukan novel', () => {
+  const OTHER = { id: 1, title: 'Makalah', status: 'not_novel' }
+
+  it('terkunci dengan pesan bukan novel, bukan belum selesai dianalisis', async () => {
+    serve(summary(null), OTHER)
+    const w = await open()
+    expect(w.text()).toContain('Dokumen ini bukan novel')
+    expect(w.text()).not.toContain('setelah analisis buku ini selesai')
+    expect(buttonByText(w, 'Buat rangkuman')).toBeUndefined()
+  })
+
+  it('pesan ini lebih diutamakan daripada kunci tingkatan', async () => {
+    allowed.middle = false
+    serve(summary(null), OTHER)
+    const w = await open()
+    expect(w.text()).toContain('Dokumen ini bukan novel')
+    expect(w.text()).not.toContain('Fitur khusus Middle Tier')
+  })
+})
+
+describe('rangkuman yang sedang dibuat', () => {
+  it('menampilkan persen dari server dan jumlah bab selesai', async () => {
+    serve(summary('running', { progress: 67, done_chapters: 2, total_chapters: 3, overall: null }))
+    const w = await open()
+    expect(w.text()).toContain('Sedang membuat rangkuman')
+    expect(w.text()).toContain('2 dari 3 bab selesai')
+    expect(w.find('[data-test="percent"]').text()).toBe('67%')
+    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('67')
+  })
+
+  it('tanpa angka dari server tampil sebagai keadaan tak tentu', async () => {
+    serve(summary('running', { progress: null, done_chapters: 0, total_chapters: 0, overall: null }))
+    const w = await open()
+    expect(w.find('[data-test="fill"]').classes()).toContain('is-indeterminate')
+  })
 })
 
 describe('rangkuman sebagian (partial)', () => {

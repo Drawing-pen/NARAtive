@@ -14,7 +14,7 @@ import HasilAnalisisPage from '@/pages/HasilAnalisisPage.vue'
 import { closeUpgrade, upgrade } from '@/lib/upgrade'
 
 const DOC = (o = {}) => ({
-  id: 7, title: 'Buku Uji', status: 'reading', rating: null, page_count: 300, read_pages: 120, failure_reason: null,
+  id: 7, title: 'Buku Uji', status: 'reading', rating: null, page_count: 300, read_pages: 120, progress: 40, failure_reason: null,
   created_at: '2026-11-01T08:00:00', has_cover: false, estimated_seconds: null, ...o,
 })
 
@@ -63,7 +63,13 @@ describe('halaman hasil saat berkas sedang dibaca', () => {
     const w = await open(DOC())
     expect(w.text()).toContain('Membaca berkas')
     expect(w.text()).toContain('Membaca halaman 120 dari 300')
-    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('120')
+    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
+    expect(w.find('[data-test="percent"]').text()).toBe('40%')
+  })
+
+  it('menampilkan petunjuk yang tidak menyebut OCR, scan, atau gambar', async () => {
+    const w = await open(DOC())
+    expect(w.find('[data-test="tip"]').exists()).toBe(true)
   })
 
   it('tidak menyebut OCR, scan, atau gambar', async () => {
@@ -87,6 +93,38 @@ describe('halaman hasil saat berkas sedang dibaca', () => {
   })
 })
 
+describe('halaman hasil untuk dokumen yang bukan novel', () => {
+  const OTHER = () => DOC({ status: 'not_novel', progress: null, rating: null, page_count: 2, read_pages: 2 })
+
+  it('langsung mengatakan dokumen ini bukan novel', async () => {
+    const w = await open(OTHER())
+    expect(w.text()).toContain('Dokumen ini bukan novel')
+    expect(w.text()).toContain('Kuota analisismu tidak terpakai')
+  })
+
+  it('tidak menampilkan rating, rentang usia, atau konten dewasa', async () => {
+    const w = await open(OTHER())
+    expect(w.text()).not.toContain('Rating konten')
+    expect(w.text()).not.toContain('Rentang usia')
+    expect(w.text()).not.toContain('Konten dewasa')
+    expect(w.find('[role="progressbar"]').exists()).toBe(false)
+  })
+
+  it('tidak meminta rincian rating dan tidak memuat ulang berkala', async () => {
+    await open(OTHER())
+    get.mockClear()
+    await vi.advanceTimersByTimeAsync(7000)
+    expect(get).not.toHaveBeenCalled()
+    expect(ratingCalls()).toHaveLength(0)
+  })
+
+  it('tidak menampilkan pesan gagal', async () => {
+    const w = await open(OTHER())
+    expect(w.text()).not.toContain('Analisis gagal')
+    expect(w.text()).not.toContain('Berkas tidak dapat diproses')
+  })
+})
+
 describe('halaman hasil saat gagal', () => {
   it('menampilkan alasan dari server', async () => {
     const w = await open(DOC({ status: 'failed', failure_reason: 'Teks pada berkas ini tidak terbaca dengan baik. Coba berkas dengan kualitas lebih tinggi.' }))
@@ -104,6 +142,42 @@ describe('halaman hasil saat menunggu analisis', () => {
     const w = await open(DOC({ status: 'queued', estimated_seconds: 60 }))
     expect(w.text()).toContain('Menunggu giliran')
     expect(w.text()).toContain('sekitar 60 detik')
+  })
+
+  it('menampilkan 0 persen selama menunggu', async () => {
+    const w = await open(DOC({ status: 'queued', progress: 0, estimated_seconds: 60 }))
+    expect(w.find('[data-test="percent"]').text()).toBe('0%')
+    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('0')
+  })
+})
+
+describe('halaman hasil saat menganalisis', () => {
+  it('menampilkan persen analisis dari server bersama perkiraan waktu', async () => {
+    const w = await open(DOC({ status: 'analyzing', progress: 55, estimated_seconds: 30 }))
+    expect(w.text()).toContain('Sedang diproses')
+    expect(w.find('[data-test="percent"]').text()).toBe('55%')
+    expect(w.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('55')
+    expect(w.text()).toContain('sekitar 30 detik')
+  })
+
+  it('tanpa angka dari server tampil sebagai keadaan tak tentu', async () => {
+    const w = await open(DOC({ status: 'analyzing', progress: null, estimated_seconds: 30 }))
+    expect(w.find('[data-test="percent"]').exists()).toBe(false)
+    expect(w.find('[data-test="fill"]').classes()).toContain('is-indeterminate')
+  })
+
+  it('tidak menyebut OCR, scan, atau gambar', async () => {
+    const text = (await open(DOC({ status: 'analyzing', progress: 55 }))).text().toLowerCase()
+    for (const word of ['ocr', 'scan', 'gambar']) expect(text).not.toContain(word)
+  })
+
+  it('angka ikut diperbarui saat halaman memuat ulang', async () => {
+    const w = await open(DOC({ status: 'analyzing', progress: 20, estimated_seconds: 30 }))
+    get.mockImplementation((url) => (url.endsWith('/rating') ? ratingResponse() : Promise.resolve({ data: DOC({ status: 'analyzing', progress: 60, estimated_seconds: 30 }) })))
+    await vi.advanceTimersByTimeAsync(3100)
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(w.find('[data-test="percent"]').text()).toBe('60%')
   })
 })
 

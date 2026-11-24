@@ -245,8 +245,9 @@ class TestPaying:
         pay(client, auth, user, order["order_id"])
         [mail] = invoices(outbox)
         assert mail["to"] == user.email and mail["subject"] == f"Invoice NARAtive {order['order_id']}"
-        for fragment in (order["order_id"], "Paket Middle (30 hari)", "Rp 29.000", f"BNI {order['va_number']}", "Aktif sampai"):
+        for fragment in (order["order_id"], "Paket Middle (30 hari)", "Rp 29.000", "Virtual Account BNI", "Aktif sampai"):
             assert fragment in mail["body"]
+        assert order["va_number"] not in mail["body"]
 
     def test_the_invoice_for_extra_analyses_has_no_end_date(self, client, auth, make_user, outbox):
         user = make_user("free")

@@ -2,16 +2,21 @@
 import { computed } from 'vue'
 import { formatDate } from '@/lib/content'
 import AuthImage from '@/components/AuthImage.vue'
+import ProgressLoader from '@/components/ProgressLoader.vue'
 import RatingBadge from '@/components/RatingBadge.vue'
 import StatusChip from '@/components/StatusChip.vue'
 
 const props = defineProps({
   doc: { type: Object, required: true },
-  number: { type: Number, default: 0 },    // urutan dalam seri; 0 = buku lepas
+  number: { type: Number, default: 0 },   
 })
 defineEmits(['delete'])
 
-const percent = computed(() => (props.doc.page_count ? Math.min(100, Math.round((props.doc.read_pages / props.doc.page_count) * 100)) : 0))
+const stageTitle = computed(() => ({ reading: 'Progres membaca berkas', queued: 'Menunggu giliran', analyzing: 'Progres analisis' })[props.doc.status] ?? 'Progres')
+const stageDetail = computed(() => {
+  if (props.doc.status === 'reading') return `Membaca halaman ${props.doc.read_pages} dari ${props.doc.page_count}`
+  return props.doc.status === 'queued' ? 'Menunggu giliran' : 'Menganalisis isi buku'
+})
 </script>
 
 <template>
@@ -38,12 +43,7 @@ const percent = computed(() => (props.doc.page_count ? Math.min(100, Math.round(
         <RatingBadge :rating="doc.rating" />
       </div>
 
-      <div v-if="doc.status === 'reading'" class="space-y-1.5">
-        <div class="h-1.5 overflow-hidden rounded-full bg-sand" role="progressbar" aria-label="Progres membaca berkas" :aria-valuenow="doc.read_pages" aria-valuemin="0" :aria-valuemax="doc.page_count">
-          <div data-test="read-bar" class="h-full rounded-full bg-amber transition-all duration-500" :style="{ width: `${percent}%` }" />
-        </div>
-        <p class="text-xs text-muted">Membaca halaman {{ doc.read_pages }} dari {{ doc.page_count }}</p>
-      </div>
+      <ProgressLoader v-if="['reading', 'queued', 'analyzing'].includes(doc.status)" compact :percent="doc.progress" :title="stageTitle" :detail="stageDetail" />
 
       <div class="relative z-10 mt-auto flex flex-wrap items-center gap-2 pt-1">
         <template v-if="doc.status === 'done'">
@@ -59,6 +59,10 @@ const percent = computed(() => (props.doc.page_count ? Math.min(100, Math.round(
         <RouterLink v-else-if="['reading', 'queued', 'analyzing'].includes(doc.status)" :to="{ name: 'document', params: { id: doc.id } }" class="btn btn-quiet btn-sm">
           <Icon icon="lucide:hourglass" class="size-4" />
           Lihat progres
+        </RouterLink>
+        <RouterLink v-else-if="doc.status === 'not_novel'" :to="{ name: 'document', params: { id: doc.id } }" class="btn btn-quiet btn-sm">
+          <Icon icon="lucide:file-text" class="size-4" />
+          Lihat
         </RouterLink>
         <span v-else class="text-sm text-danger">{{ doc.failure_reason || 'Analisis gagal. Unggah ulang file ini.' }}</span>
         <button class="btn btn-quiet btn-sm ml-auto !px-2.5 hover:!bg-danger/10 hover:!text-danger" :aria-label="`Hapus ${doc.title}`" title="Hapus dari koleksi" @click="$emit('delete', doc)">

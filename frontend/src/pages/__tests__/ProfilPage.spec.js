@@ -6,13 +6,14 @@ const renameAccount = vi.fn()
 const changePassword = vi.fn()
 const deleteAccount = vi.fn()
 const refreshUser = vi.fn()
+const post = vi.fn()
 const replace = vi.fn()
 const push = vi.fn()
 const route = { hash: '' }
 const USER = { name: 'Rana', email: 'rana@example.com', created_at: '2026-10-01T08:00:00', tier: 'free' }
 
 vi.mock('@/lib/api', () => ({
-  default: { get: (...args) => get(...args) },
+  default: { get: (...args) => get(...args), post: (...args) => post(...args) },
   errorMessage: (e, fallback) => e?.response?.data?.detail ?? fallback,
 }))
 vi.mock('@/lib/auth', async () => {
@@ -56,7 +57,7 @@ async function open() {
     global: {
       stubs: {
         Icon: true,
-        RouterLink: { template: '<a><slot /></a>' },
+        RouterLink: { props: ['to'], template: '<a :data-to="JSON.stringify(to)"><slot /></a>' },
       },
     },
   })
@@ -67,7 +68,7 @@ async function open() {
 const button = (w, text) => w.findAll('button').find((b) => b.text().includes(text))
 
 beforeEach(() => {
-  for (const fn of [get, renameAccount, changePassword, deleteAccount, refreshUser, replace, push]) fn.mockReset()
+  for (const fn of [get, post, renameAccount, changePassword, deleteAccount, refreshUser, replace, push]) fn.mockReset()
   route.hash = ''
   auth.user = { ...USER }
   serve()
@@ -135,6 +136,112 @@ describe('payment history', () => {
     expect(rows[0].text()).toContain('Berhasil')
     expect(rows[1].text()).toContain('3 analisis tambahan')
     expect(rows[1].text()).toContain('Kedaluwarsa')
+  })
+
+  describe('checking a payment', () => {
+    const ROWS = () => [
+      TX({ order_id: 'NAR-1-expd', status: 'expired', provider: 'midtrans' }),
+      TX({ order_id: 'NAR-1-wait', status: 'pending', provider: 'midtrans' }),
+      TX({ order_id: 'NAR-1-paid', status: 'paid', provider: 'midtrans' }),
+      TX({ order_id: 'NAR-1-sims', status: 'expired', provider: 'simulated' }),
+      TX({ order_id: 'NAR-1-canc', status: 'cancelled', provider: 'midtrans' }),
+      TX({ order_id: 'NAR-1-fail', status: 'failed', provider: 'midtrans' }),
+    ]
+    const row = (w, id) => w.findAll('[data-test=transaction]').find((r) => r.text().includes(id))
+    const checkButton = (w, id) => row(w, id).findAll('button').find((b) => b.text().includes('Periksa status'))
+
+    it('offers it on unsuccessful Midtrans orders only', async () => {
+      serve(OVERVIEW, ROWS())
+      const w = await open()
+      for (const id of ['NAR-1-expd', 'NAR-1-wait', 'NAR-1-canc', 'NAR-1-fail']) expect(checkButton(w, id), id).toBeDefined()
+      for (const id of ['NAR-1-paid', 'NAR-1-sims']) expect(checkButton(w, id), id).toBeUndefined()
+    })
+
+    it('keeps the continue button on pending orders next to it', async () => {
+      serve(OVERVIEW, ROWS())
+      const w = await open()
+      const buttons = row(w, 'NAR-1-wait').findAll('button').map((b) => b.text())
+      expect(buttons).toEqual(expect.arrayContaining(['Lanjutkan bayar', 'Periksa status']))
+    })
+
+    it('asks the server and shows the order as successful when it was paid', async () => {
+      serve(OVERVIEW, ROWS())
+      post.mockResolvedValue({ data: TX({ order_id: 'NAR-1-expd', status: 'paid', provider: 'midtrans' }) })
+      const w = await open()
+      await checkButton(w, 'NAR-1-expd').trigger('click')
+      await flushPromises()
+      expect(post).toHaveBeenCalledWith('/billing/transactions/NAR-1-expd/check')
+      expect(row(w, 'NAR-1-expd').text()).toContain('Berhasil')
+      expect(row(w, 'NAR-1-expd').text()).toContain('Lihat invoice')
+      expect(w.find('[data-test=check-note]').text()).toBe('Pembayaran tercatat berhasil.')
+      expect(refreshUser).toHaveBeenCalled()
+    })
+
+    it('says nothing was found and shows the order number to give to the admin', async () => {
+      serve(OVERVIEW, ROWS())
+      post.mockResolvedValue({ data: TX({ order_id: 'NAR-1-expd', status: 'expired', provider: 'midtrans' }) })
+      const w = await open()
+      await checkButton(w, 'NAR-1-expd').trigger('click')
+      await flushPromises()
+      const note = w.find('[data-test=check-note]').text()
+      expect(note).toContain('Belum ada pembayaran yang terdeteksi untuk pesanan ini.')
+      expect(note).toContain('hubungi admin dengan nomor pesanan NAR-1-expd')
+      expect(row(w, 'NAR-1-expd').text()).toContain('Kedaluwarsa')
+    })
+
+    it('shows a failure message and lets the user try again', async () => {
+      serve(OVERVIEW, ROWS())
+      post.mockRejectedValue(new Error('mati'))
+      const w = await open()
+      await checkButton(w, 'NAR-1-expd').trigger('click')
+      await flushPromises()
+      expect(w.find('[data-test=check-note]').text()).toBe('Gagal memeriksa status. Coba lagi.')
+      expect(checkButton(w, 'NAR-1-expd').attributes('disabled')).toBeUndefined()
+    })
+
+    it('locks the buttons while a check is running so there is one request at a time', async () => {
+      serve(OVERVIEW, ROWS())
+      let resolve
+      post.mockReturnValue(new Promise((r) => (resolve = r)))
+      const w = await open()
+      await checkButton(w, 'NAR-1-expd').trigger('click')
+      expect(checkButton(w, 'NAR-1-expd').attributes('disabled')).toBeDefined()
+      await checkButton(w, 'NAR-1-canc').trigger('click')
+      expect(post).toHaveBeenCalledTimes(1)
+      resolve({ data: TX({ order_id: 'NAR-1-expd', status: 'expired', provider: 'midtrans' }) })
+      await flushPromises()
+    })
+
+    it('clears the previous note when checking another order', async () => {
+      serve(OVERVIEW, ROWS())
+      post.mockRejectedValueOnce(new Error('mati')).mockResolvedValueOnce({ data: TX({ order_id: 'NAR-1-canc', status: 'cancelled', provider: 'midtrans' }) })
+      const w = await open()
+      await checkButton(w, 'NAR-1-expd').trigger('click')
+      await flushPromises()
+      await checkButton(w, 'NAR-1-canc').trigger('click')
+      await flushPromises()
+      expect(w.find('[data-test=check-note]').text()).toContain('Belum ada pembayaran yang terdeteksi')
+    })
+
+    it('does not mention OCR, scan, or images', async () => {
+      serve(OVERVIEW, ROWS())
+      const text = (await open()).text().toLowerCase()
+      for (const word of ['ocr', 'scan', 'gambar']) expect(text).not.toContain(word)
+    })
+  })
+
+  it('links to the invoice only for successful payments', async () => {
+    serve(OVERVIEW, [
+      TX(),
+      TX({ order_id: 'NAR-1-bbbb', status: 'expired' }),
+      TX({ order_id: 'NAR-1-cccc', status: 'pending' }),
+      TX({ order_id: 'NAR-1-dddd', status: 'cancelled' }),
+    ])
+    const w = await open()
+    const rows = w.findAll('[data-test=transaction]')
+    const link = rows[0].findAll('a').find((a) => a.text().includes('Lihat invoice'))
+    expect(JSON.parse(link.attributes('data-to'))).toEqual({ name: 'invoice', params: { orderId: 'NAR-1-aaaa' } })
+    for (const row of rows.slice(1)) expect(row.text()).not.toContain('Lihat invoice')
   })
 
   it('offers to continue only pending payments and opens the payment page', async () => {

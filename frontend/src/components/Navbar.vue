@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth, logout } from '@/lib/auth'
 import Logo from '@/components/Logo.vue'
@@ -6,10 +7,19 @@ import RatingBadge from '@/components/RatingBadge.vue'
 import TierChip from '@/components/TierChip.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 
-defineProps({ id: { type: String, required: true }, doc: { type: Object, default: null } })
+const props = defineProps({ id: { type: String, required: true }, doc: { type: Object, default: null } })
 defineEmits(['navigate'])
 
 const router = useRouter()
+
+const LOCK_TITLE = 'Terkunci: dokumen ini bukan novel'
+const novelOnly = [
+  { name: 'reader', icon: 'lucide:book-open', label: 'Mode baca' },
+  { name: 'summary', icon: 'lucide:scroll-text', label: 'Rangkuman' },
+  { name: 'characters', icon: 'lucide:contact-round', label: 'Deskripsi tokoh' },
+  { name: 'relations', icon: 'lucide:git-fork', label: 'Relasi tokoh' },
+]
+const locked = computed(() => props.doc?.status === 'not_novel')
 
 function keluar() {
   logout()
@@ -48,21 +58,10 @@ const itemCls =
         <Icon icon="lucide:chart-no-axes-column" class="size-5" />
         Hasil analisis
       </RouterLink>
-      <RouterLink :to="{ name: 'reader', params: { id } }" :class="itemCls" @click="$emit('navigate')">
-        <Icon icon="lucide:book-open" class="size-5" />
-        Mode baca
-      </RouterLink>
-      <RouterLink :to="{ name: 'summary', params: { id } }" :class="itemCls" @click="$emit('navigate')">
-        <Icon icon="lucide:scroll-text" class="size-5" />
-        Rangkuman
-      </RouterLink>
-      <RouterLink :to="{ name: 'characters', params: { id } }" :class="itemCls" @click="$emit('navigate')">
-        <Icon icon="lucide:contact-round" class="size-5" />
-        Deskripsi tokoh
-      </RouterLink>
-      <RouterLink :to="{ name: 'relations', params: { id } }" :class="itemCls" @click="$emit('navigate')">
-        <Icon icon="lucide:git-fork" class="size-5" />
-        Relasi tokoh
+      <RouterLink v-for="item in novelOnly" :key="item.name" :to="{ name: item.name, params: { id } }" :class="itemCls" :title="locked ? LOCK_TITLE : undefined" @click="$emit('navigate')">
+        <Icon :icon="item.icon" class="size-5" />
+        <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+        <Icon v-if="locked" data-test="lock" icon="lucide:lock" class="size-4 shrink-0 text-muted" />
       </RouterLink>
       <RouterLink :to="{ name: 'sensitivity', params: { id } }" :class="itemCls" @click="$emit('navigate')">
         <Icon icon="lucide:sliders-horizontal" class="size-5" />
