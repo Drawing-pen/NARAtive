@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./narative.db"
     secret_key: str = "dev-secret-ganti-di-production-minimal-32-karakter"
     access_token_minutes: int = 60 * 24
-    model_dir: str = "../model"
     upload_dir: str = "uploads"
     cors_origins: str = "http://localhost:5173"
     frontend_url: str = "http://localhost:5173"
@@ -21,8 +20,9 @@ class Settings(BaseSettings):
     router_base_url: str = ""
     router_api_key: str = ""
     router_model: str = ""
-    router_timeout: float = 120.0
+    router_timeout: float = 300.0
     character_parallel: int = 3
+    analyzer_chunk_chars: int = 20000
     max_upload_mb: int = 100
     ocr_enabled: bool = True
     ocr_languages: str = "ind+eng"

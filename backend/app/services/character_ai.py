@@ -287,7 +287,12 @@ def merge(entries: list[dict]) -> list[dict]:
     known = {e["id"] for e in entries}
     groups = []
     for entry in data.get("tokoh", []):
-        ids = [i for i in entry.get("id", []) if isinstance(i, int) and not isinstance(i, bool) and i in known]
+        raw_ids = entry.get("id", [])
+        if isinstance(raw_ids, int) and not isinstance(raw_ids, bool):
+            raw_ids = [raw_ids]
+        elif not isinstance(raw_ids, list):
+            raw_ids = []
+        ids = [i for i in raw_ids if isinstance(i, int) and not isinstance(i, bool) and i in known]
         if ids:
             groups.append({"ids": list(dict.fromkeys(ids)), "name": _text(entry.get("nama_utama")), "description": _description(entry.get("deskripsi"))})
     return groups

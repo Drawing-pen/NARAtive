@@ -23,6 +23,16 @@ FAILURES = [
 ]
 
 
+RETRYABLE = {"net", "empty", "text", "timeout"}
+
+
+def failing(router, failure):
+    """Menambahkan kegagalan; yang sementara dicoba dua kali (R25), jadi harus gagal dua kali agar benar-benar gagal."""
+    times = 2 if failure[0] in RETRYABLE else 1
+    router.add(*([failure] * times))
+    return times
+
+
 class TestRequest:
     def test_it_posts_to_chat_completions_with_a_bearer_key(self, router):
         assert summarizer._generate("Halo") == "Dari router"
@@ -106,10 +116,10 @@ class TestWhichProvider:
 class TestFallbackToGemini:
     @pytest.mark.parametrize("failure", FAILURES)
     def test_a_router_failure_falls_back_to_gemini(self, router, gemini, failure):
-        router.add(failure)
+        calls = failing(router, failure)
         gemini.add(("text", "Dari Gemini"))
         assert summarizer._generate("Halo") == "Dari Gemini"
-        assert len(router.calls) == 1 and len(gemini.calls) == 1
+        assert len(router.calls) == calls and len(gemini.calls) == 1
 
     def test_gemini_receives_the_same_prompt(self, router, gemini):
         router.add(("http", 500, "x"))
@@ -153,7 +163,7 @@ class TestRouterOnly:
         (("empty",), "9router"),
     ])
     def test_other_failures_are_summary_errors(self, router, failure, fragment):
-        router.add(failure)
+        failing(router, failure)
         with pytest.raises(summarizer.SummaryError) as err:
             summarizer._generate("Halo")
         assert fragment in str(err.value) and "9router" in str(err.value)
@@ -199,10 +209,10 @@ class TestCooldown:
         pytest.param(("net",), id="jaringan"),
     ])
     def test_service_failures_hold_the_router(self, router, gemini, failure):
-        router.add(failure)
+        calls = failing(router, failure)
         summarizer._generate("satu")
         summarizer._generate("dua")
-        assert len(router.calls) == 1
+        assert len(router.calls) == calls
 
     @pytest.mark.parametrize("failure", [
         pytest.param(("filtered",), id="content-filter"),
@@ -210,17 +220,17 @@ class TestCooldown:
         pytest.param(("text", "  "), id="teks-kosong"),
     ])
     def test_content_failures_do_not_hold_the_router(self, router, gemini, failure):
-        router.add(failure)
+        calls = failing(router, failure)
         summarizer._generate("satu")
         assert summarizer._generate("dua") == "Dari router"
-        assert len(router.calls) == 2
+        assert len(router.calls) == calls + 1
 
     def test_broken_json_does_not_hold_the_router(self, router, gemini):
         router.add(("text", "bukan json"))
         summarizer._generate("satu", schema=SCHEMA)
         router.add(("text", '{"ok": true}'))
         assert summarizer._generate("dua", schema=SCHEMA) == '{"ok": true}'
-        assert len(router.calls) == 2
+        assert len(router.calls) == 3
 
     def test_a_success_does_not_hold_the_router(self, router):
         summarizer._generate("satu")
@@ -272,6 +282,72 @@ class TestJson:
     def test_text_that_is_not_json_is_fine_without_a_schema(self, router):
         router.add(("text", "ini bukan json"))
         assert summarizer._generate("Halo") == "ini bukan json"
+
+
+class TestRetry:
+    """R25: kegagalan sementara 9router diulang sekali ke 9router sebelum pindah ke Gemini."""
+
+    @pytest.mark.parametrize("failure", [
+        pytest.param(("net",), id="jaringan"),
+        pytest.param(("timeout",), id="batas-waktu"),
+        pytest.param(("empty",), id="tanpa-pilihan"),
+        pytest.param(("text", "  "), id="teks-kosong"),
+    ])
+    def test_a_transient_failure_is_retried_once_on_the_router(self, router, gemini, clock, failure):
+        router.add(failure, ("text", "Berhasil kedua kali"))
+        assert summarizer._generate("Halo") == "Berhasil kedua kali"
+        assert len(router.calls) == 2 and gemini.calls == []
+        assert clock.sleeps == [summarizer.ROUTER_RETRY_WAIT]
+
+    def test_invalid_json_is_retried_once_on_the_router(self, router, gemini):
+        router.add(("text", "ini bukan json"), ("text", '{"ok": true}'))
+        assert summarizer._generate("Nilai", schema=SCHEMA) == '{"ok": true}'
+        assert len(router.calls) == 2 and gemini.calls == []
+
+    def test_the_retry_sends_the_same_request(self, router):
+        router.add(("net",), ("text", "ok"))
+        summarizer._generate("Pertanyaan", system="Aturan", temperature=0.1, max_tokens=99)
+        assert router.calls[0]["body"] == router.calls[1]["body"]
+
+    def test_two_transient_failures_fall_back_to_gemini_and_hold_the_router(self, router, gemini):
+        router.add(("timeout",), ("timeout",))
+        gemini.add(("text", "Dari Gemini"))
+        assert summarizer._generate("satu") == "Dari Gemini"
+        summarizer._generate("dua")
+        assert len(router.calls) == 2
+
+    @pytest.mark.parametrize("failure", [
+        pytest.param(("http", 500, "x"), id="500"),
+        pytest.param(("http", 503, "x"), id="503"),
+        pytest.param(("http", 401, "x"), id="401"),
+        pytest.param(("http", 429, "x"), id="429"),
+        pytest.param(("filtered",), id="content-filter"),
+    ])
+    def test_http_errors_and_safety_blocks_are_not_retried(self, router, gemini, clock, failure):
+        router.add(failure)
+        try:
+            summarizer._generate("Halo")
+        except summarizer.SummaryError:
+            pass
+        assert len(router.calls) == 1 and clock.sleeps == []
+
+    def test_a_success_is_never_retried(self, router, clock):
+        summarizer._generate("Halo")
+        assert len(router.calls) == 1 and clock.sleeps == []
+
+    def test_the_retry_wait_is_short(self):
+        assert 0 < summarizer.ROUTER_RETRY_WAIT <= 5
+
+    def test_the_default_router_timeout_is_five_minutes(self):
+        from app.core.config import Settings
+
+        assert Settings(_env_file=None).router_timeout == 300.0
+
+    def test_a_retry_is_logged_as_a_warning(self, router, caplog):
+        router.add(("timeout",), ("text", "ok"))
+        with caplog.at_level(logging.WARNING):
+            summarizer._generate("Halo")
+        assert any("9router" in r.getMessage() and "ulang" in r.getMessage() for r in caplog.records)
 
 
 class TestLogging:

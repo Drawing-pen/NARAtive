@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.db.database import get_db
 from app.services.export import build_pdf
 from app.services.jobs import enqueue
-from app.ml.analyzer import model_ready
+from app.services.llm_analyzer import available as analysis_ready
 from app.db.models import Chapter, Character, CharacterRelation, Document, Paragraph, User
 from app.extraction.epub_utils import EpubError
 from app.extraction.reader import read_document
@@ -72,8 +72,8 @@ def upload_document(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not model_ready():
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Model analisis belum terpasang di server. Hubungi pengelola sistem.")
+    if not analysis_ready():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Layanan AI belum dikonfigurasi di server. Hubungi pengelola sistem.")
 
     ext = os.path.splitext((file.filename or "").lower())[1]
     allowed = {

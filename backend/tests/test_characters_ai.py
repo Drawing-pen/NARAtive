@@ -341,6 +341,18 @@ class TestMerge:
         assert len(first["description"]) <= 600 and "  " not in first["description"] and "\n" not in first["description"]
         assert second == {"ids": [2], "name": "Seli", "description": ""}
 
+    def test_a_single_number_instead_of_a_list_is_read_as_one_id(self, llm):
+        llm.add(groups({"id": 2, "nama_utama": "Seli", "deskripsi": "Tokoh."}, {"id": 0, "nama_utama": "Raib", "deskripsi": ""}))
+        first, second = character_ai.merge(ENTRIES)
+        assert first == {"ids": [2], "name": "Seli", "description": "Tokoh."}
+        assert second["ids"] == [0]
+
+    @pytest.mark.parametrize("value", [True, 99, "2", None, 2.5, {"a": 1}])
+    def test_other_odd_id_values_are_ignored_without_failing(self, llm, value):
+        llm.add(groups({"id": value, "nama_utama": "Aneh", "deskripsi": ""}, {"id": [0], "nama_utama": "Raib", "deskripsi": ""}))
+        result = character_ai.merge(ENTRIES)
+        assert [g["name"] for g in result] == ["Raib"]
+
     @pytest.mark.parametrize("raw", ["", "-", "N/A", "tidak ada", "Tidak diketahui", None])
     def test_an_empty_description_becomes_empty(self, llm, raw):
         llm.add(groups({"id": [0], "nama_utama": "Raib", "deskripsi": raw}))

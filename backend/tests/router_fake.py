@@ -49,6 +49,8 @@ class Router:
             raise urllib.error.HTTPError(req.full_url, step[1], "galat", {}, io.BytesIO(step[2].encode()))
         if kind == "net":
             raise urllib.error.URLError("jaringan putus")
+        if kind == "timeout":
+            raise TimeoutError("timed out")
         raise AssertionError(f"langkah tak dikenal: {kind}")
 
 

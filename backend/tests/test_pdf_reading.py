@@ -20,7 +20,7 @@ ANALYSED = []
 @pytest.fixture(autouse=True)
 def environment(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
-    monkeypatch.setattr(documents, "model_ready", lambda: True)
+    monkeypatch.setattr(documents, "analysis_ready", lambda: True)
     monkeypatch.setattr(documents, "enqueue", lambda doc_id: None)
     monkeypatch.setattr(reader_jobs.jobs, "enqueue", lambda doc_id: ANALYSED.append(doc_id))
     ANALYSED.clear()

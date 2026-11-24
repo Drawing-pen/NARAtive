@@ -140,13 +140,15 @@ def _note(purpose: str, model: str, outcome: str, started: float, detail: str = 
 
 
 ROUTER_COOLDOWN = 60
+ROUTER_RETRY_WAIT = 2.0
 _router_blocked_until = 0.0
 _FENCE = re.compile(r"^```[a-zA-Z]*\s*(.*?)\s*```$", re.DOTALL)
 
 
-def _router_error(kind: type[SummaryError], message: str, hold: bool) -> SummaryError:
+def _router_error(kind: type[SummaryError], message: str, hold: bool, retry: bool = False) -> SummaryError:
     error = kind(message)
     error.hold = hold
+    error.retry = retry
     return error
 
 
@@ -183,10 +185,10 @@ def _router_generate(prompt: str, system: str, schema: dict | None, temperature:
         raise _router_error(SummaryError, f"9router menolak permintaan ({e.code}): {detail}", True)
     except (urllib.error.URLError, OSError) as e:
         _note(purpose, model, "jaringan gagal", started, provider="9router")
-        raise _router_error(SummaryError, f"Tidak bisa menghubungi 9router: {e}".replace(key, "***"), True)
+        raise _router_error(SummaryError, f"Tidak bisa menghubungi 9router: {e}".replace(key, "***"), True, retry=True)
     except ValueError:
         _note(purpose, model, "balasan rusak", started, provider="9router")
-        raise _router_error(SummaryError, "Balasan 9router tidak dapat dibaca.", True)
+        raise _router_error(SummaryError, "Balasan 9router tidak dapat dibaca.", True, retry=True)
     choices = data.get("choices") or []
     choice = choices[0] if choices else {}
     content = (choice.get("message") or {}).get("content") or ""
@@ -198,7 +200,7 @@ def _router_generate(prompt: str, system: str, schema: dict | None, temperature:
         _note(purpose, model, f"tanpa teks ({reason})", started, provider="9router")
         if reason == "content_filter":
             raise _router_error(SafetyBlock, "9router menahan teks karena kebijakan keamanan (content_filter).", False)
-        raise _router_error(SummaryError, f"9router tidak mengembalikan teks ({reason}).", False)
+        raise _router_error(SummaryError, f"9router tidak mengembalikan teks ({reason}).", False, retry=True)
     if schema:
         fenced = _FENCE.match(text)
         text = fenced.group(1) if fenced else text
@@ -206,10 +208,21 @@ def _router_generate(prompt: str, system: str, schema: dict | None, temperature:
             json.loads(text)
         except ValueError:
             _note(purpose, model, "bukan JSON", started, provider="9router")
-            raise _router_error(SummaryError, "Jawaban 9router bukan JSON yang sah.", False)
+            raise _router_error(SummaryError, "Jawaban 9router bukan JSON yang sah.", False, retry=True)
     usage = data.get("usage") or {}
     _note(purpose, model, "ok", started, f" | token masuk={usage.get('prompt_tokens', '?')} keluar={usage.get('completion_tokens', '?')}", provider="9router")
     return text
+
+
+def _router_attempt(prompt: str, system: str, schema: dict | None, temperature: float, max_tokens: int, purpose: str) -> str:
+    try:
+        return _router_generate(prompt, system, schema, temperature, max_tokens, purpose)
+    except SummaryError as e:
+        if not getattr(e, "retry", False):
+            raise
+        log.warning("9router gagal sementara (%s), mengulang sekali.", e)
+        time.sleep(ROUTER_RETRY_WAIT)
+        return _router_generate(prompt, system, schema, temperature, max_tokens, purpose)
 
 
 def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, temperature: float = 0.3, max_tokens: int = 2048,
@@ -221,7 +234,7 @@ def _generate(prompt: str, system: str = SYSTEM, schema: dict | None = None, tem
             failure = SummaryError("9router sedang ditahan sementara setelah gagal; coba lagi sebentar lagi.")
         else:
             try:
-                return _router_generate(prompt, system, schema, temperature, max_tokens, purpose)
+                return _router_attempt(prompt, system, schema, temperature, max_tokens, purpose)
             except SummaryError as e:
                 failure = e
                 if getattr(e, "hold", True):

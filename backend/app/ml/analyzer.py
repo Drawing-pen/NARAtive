@@ -1,102 +1,4 @@
-"""Analyzer konten: model XLM-RoBERTa + LoRA hasil latih (model_best.pt + tokenizer_xlmr)."""
-import threading
-import logging
-import time
-from pathlib import Path
-
-from app.core.config import settings
-from app.ml.lexicon import sexual_lexicon_score
-
-log = logging.getLogger("uvicorn.error")
-
-WINDOW_MAX_LENGTH = 256  
-BATCH_SIZE = 16
-EMOTION_LABELS = ["sad", "angry", "fear", "happy"]
-
-
-
-class ModelAnalyzer:
-    name = "xlmr-lora"
-
-    def __init__(self, checkpoint: Path, tokenizer_dir: Path):
-        import torch
-        from transformers import AutoTokenizer
-
-        from app.ml.model import load_model
-
-        self.torch = torch
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))
-        self.model = load_model(str(checkpoint), self.device)
-
-    def _windows(self, paragraphs: list[str]) -> list[str]:
-        out = []
-        for i in range(len(paragraphs)):
-            lo, hi = max(0, i - 1), min(len(paragraphs), i + 2)
-            out.append(" ".join(paragraphs[lo:hi]))
-        return out
-
-    def analyze(self, paragraphs: list[str]) -> list[dict]:
-        torch = self.torch
-        texts = self._windows(paragraphs)
-        n = len(texts)
-        results = [dict() for _ in texts]
-        order = sorted(range(n), key=lambda i: len(texts[i]))
-        t0 = time.time()
-        with torch.inference_mode():
-            for start in range(0, n, BATCH_SIZE):
-                idx = order[start:start + BATCH_SIZE]
-                enc = self.tokenizer(
-                    [texts[i] for i in idx], padding=True, truncation=True,
-                    max_length=WINDOW_MAX_LENGTH, return_tensors="pt",
-                ).to(self.device)
-                cls = self.model.backbone(**enc).last_hidden_state[:, 0, :]
-                heads = self.model.heads
-                for dim in ("profanity", "sexual", "violence"):
-                    probs = torch.softmax(heads[dim](cls), dim=1)[:, 1].cpu().tolist()
-                    for j, v in zip(idx, probs):
-                        results[j][dim] = round(v, 4)
-                conf, emo = torch.softmax(heads["emotion"](cls), dim=1).max(dim=1)
-                for j, e, c in zip(idx, emo.cpu().tolist(), conf.cpu().tolist()):
-                    results[j]["emotion"] = EMOTION_LABELS[e]
-                    results[j]["emotion_prob"] = round(c, 4)
-                done = min(start + BATCH_SIZE, n)
-                if (start // BATCH_SIZE) % 10 == 0 or done == n:
-                    log.info("Analisis: %d/%d paragraf (%.0f detik)", done, n, time.time() - t0)
-        for r, text in zip(results, paragraphs):
-            r["sexual"] = max(r["sexual"], sexual_lexicon_score(text))
-        return results
-
-
-class ModelNotInstalled(RuntimeError):
-    """File model belum ada di folder model/."""
-
-
-def _model_paths() -> tuple[Path, Path]:
-    model_dir = Path(settings.model_dir)
-    return model_dir / "model_best.pt", model_dir / "tokenizer_xlmr"
-
-
-def model_ready() -> bool:
-    ckpt, tok = _model_paths()
-    return ckpt.exists() and tok.exists()
-
-
-_analyzer = None
-_load_lock = threading.Lock()
-
-
-def get_analyzer() -> ModelAnalyzer:
-    global _analyzer
-    if _analyzer is None:
-        with _load_lock:
-            if _analyzer is None:
-                if not model_ready():
-                    ckpt, tok = _model_paths()
-                    raise ModelNotInstalled(f"Model tidak ditemukan. Taruh {ckpt.name} dan folder {tok.name} di {ckpt.parent.resolve()}.")
-                ckpt, tok = _model_paths()
-                _analyzer = ModelAnalyzer(ckpt, tok)
-    return _analyzer
+"""Aturan rating konten: ambang per paragraf, kategori usia, dan ringkasan hasil analisis (R24: skor paragraf berasal dari LLM)."""
 
 
 THRESHOLDS = {"profanity": 0.5, "sexual": 0.5, "violence": 0.8}
@@ -144,24 +46,6 @@ def explain(pct: dict, hits: dict) -> list[str]:
 
 
 AGE_RANGES = {"General": "Semua umur", "Teen": "13+", "Mature": "17+", "Explicit": "21+"}
-NEGATIVE_EMOTIONS = ("sad", "angry", "fear")
-EMOTION_MIN_CONF = 0.85
-
-
-AI_WEIGHT = 0.7
-
-
-def is_heavy(r: dict) -> bool:
-    prob = r.get("emotion_prob")
-    return r["emotion"] in NEGATIVE_EMOTIONS and prob is not None and prob >= EMOTION_MIN_CONF
-
-
-def blend_heaviness(model_part: float | None, legacy: float, ai: float | None) -> float:
-    if ai is None:
-        return legacy if model_part is None else model_part
-    if model_part is None:
-        return ai
-    return round(AI_WEIGHT * ai + (1 - AI_WEIGHT) * model_part, 1)
 
 
 def summarize(results: list[dict], ai: float | None = None) -> dict:
@@ -170,11 +54,5 @@ def summarize(results: list[dict], ai: float | None = None) -> dict:
            for d, t in THRESHOLDS.items()}
     hit = {d: sum(1 for r in results if r[d] >= t) for d, t in THRESHOLDS.items()}
     adult = round(100 * sum(1 for r in results if any(r[d] >= THRESHOLDS[d] for d in ADULT_DIMENSIONS)) / n, 1)
-    legacy = round(100 * sum(1 for r in results if r["emotion"] in NEGATIVE_EMOTIONS) / n, 1)
-    model_part = round(100 * sum(1 for r in results if is_heavy(r)) / n, 1) if any(r.get("emotion_prob") is not None for r in results) else None
-    heaviness = blend_heaviness(model_part, legacy, ai)
-    counts = {}
-    for r in results:
-        counts[r["emotion"]] = counts.get(r["emotion"], 0) + 1
-    dominant = max(counts, key=counts.get) if counts else None
-    return {"pct": pct, "adult": adult, "heaviness": heaviness, "rating": rate(pct, hit), "emotion": dominant}
+    heaviness = ai if ai is not None else pct["violence"]
+    return {"pct": pct, "adult": adult, "heaviness": heaviness, "rating": rate(pct, hit)}

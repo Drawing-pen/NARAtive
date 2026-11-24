@@ -28,3 +28,9 @@ def sexual_lexicon_score(text: str) -> float:
         if hits:
             miss *= (1 - w) * (1 - 0.2 * w * min(hits - 1, 3))   
     return round(min(0.99, 1 - miss), 4)
+
+def redact(text: str, min_weight: float = 0.3) -> str:
+    for rx, w in _COMPILED:
+        if w >= min_weight:
+            text = rx.sub("[eksplisit]", text)
+    return text

@@ -6,11 +6,12 @@ from datetime import datetime
 from sqlalchemy import select
 
 from app.db.database import SessionLocal
-from app.ml.analyzer import get_analyzer, summarize
+from app.ml.analyzer import summarize
 from app.core.security import has_tier
 from app.db.models import Document, User
 from app.services import heaviness
-from app.services import character_ai, characters
+from app.services import character_ai, characters, llm_analyzer
+from app.services.llm_analyzer import AnalysisError
 from app.services.summarizer import SummaryError, configured
 
 log = logging.getLogger("uvicorn.error")
@@ -32,11 +33,10 @@ def process(doc_id: int) -> None:
         doc.status = "analyzing"
         db.commit()
         paras = list(doc.paragraphs)
-        texts = [p.text for p in paras]
-        results = get_analyzer().analyze(texts)
+        results = llm_analyzer.analyze([(p.chapter_no, p.text) for p in paras])
         for p, r in zip(paras, results):
-            p.profanity, p.sexual, p.violence, p.emotion = r["profanity"], r["sexual"], r["violence"], r["emotion"]
-            p.emotion_score = r["emotion_prob"]
+            p.profanity, p.sexual, p.violence = r["profanity"], r["sexual"], r["violence"]
+            p.emotion = p.emotion_score = None
         if configured():
             try:
                 doc.heaviness_ai, doc.heaviness_note = heaviness.rate_document(doc)
@@ -44,19 +44,21 @@ def process(doc_id: int) -> None:
                 log.warning("Penilaian bobot cerita oleh Gemini dilewati untuk dokumen %s: %s", doc_id, e)
         s = summarize(results, ai=doc.heaviness_ai)
         doc.pct_profanity, doc.pct_sexual, doc.pct_violence = s["pct"]["profanity"], s["pct"]["sexual"], s["pct"]["violence"]
-        doc.rating, doc.dominant_emotion = s["rating"], s["emotion"]
+        doc.rating, doc.dominant_emotion = s["rating"], None
         doc.pct_adult, doc.heaviness = s["adult"], s["heaviness"]
         doc.status, doc.analyzed_at = "done", datetime.utcnow()
         db.commit()
         owner = db.get(User, doc.user_id)
         if owner is not None and has_tier(owner, "middle") and character_ai.available():
             characters.run(doc_id)
-    except Exception:
+    except Exception as e:
         log.exception("Analisis dokumen %s gagal", doc_id)
         db.rollback()
         doc = db.get(Document, doc_id)
         if doc is not None:
             doc.status = "failed"
+            if isinstance(e, AnalysisError):
+                doc.failure_reason = str(e)
             db.commit()
     finally:
         db.close()

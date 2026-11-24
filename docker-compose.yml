@@ -41,8 +41,6 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       DOCUMENT_PARSER: ${DOCUMENT_PARSER:-auto}
-      MODEL_DIR: /model
-      MODEL_URL: ${MODEL_URL:-https://huggingface.co/Roena33/narative-model/resolve/main/model_best.pt}
       UPLOAD_DIR: /app/uploads
       DEV_UNLOCK_ALL_TIERS: ${DEV_UNLOCK_ALL_TIERS:-false}
       ROUTER_BASE_URL: ${ROUTER_BASE_URL:-http://9router:20128/v1}
@@ -52,9 +50,7 @@ services:
       OCR_LANGUAGES: ${OCR_LANGUAGES:-ind+eng}
       OCR_DPI: ${OCR_DPI:-200}
     volumes:
-      - ./model:/model
       - uploads:/app/uploads
-      - hf_cache:/app/.cache/huggingface
     ports:
       - "8000:8000"
 
@@ -80,5 +76,4 @@ services:
 volumes:
   db_data:
   uploads:
-  hf_cache:
   router_data:

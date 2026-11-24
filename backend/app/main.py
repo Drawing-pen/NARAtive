@@ -1,5 +1,4 @@
 import logging
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,26 +9,16 @@ from app.services.jobs import start_worker
 from app.services.reader_jobs import start_worker as start_reader
 from app.services import characters as character_service
 from app.services.summarizer import reset_stale
-from app.ml.analyzer import ModelNotInstalled, get_analyzer
+from app.services.llm_analyzer import available as analysis_ready
 from app.api.routers import admin, auth, billing, collections, documents, images, sensitivity
 
 log = logging.getLogger("uvicorn.error")
 
 
-def _load_model() -> None:
-    try:
-        get_analyzer()
-        log.info("Model analisis siap.")
-    except ModelNotInstalled as e:
-        log.warning("%s Unggahan akan ditolak sampai model terpasang.", e)
-    except Exception as e:
-        log.warning("Model analisis gagal dimuat (%s); akan dicoba lagi saat dipakai.", e.__class__.__name__)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.model_loader = threading.Thread(target=_load_model, name="model-loader", daemon=True)
-    app.state.model_loader.start()
+    if not analysis_ready():
+        log.warning("Layanan AI belum dikonfigurasi (9router atau Gemini); unggahan akan ditolak sampai terisi.")
     try:
         start_worker()
     except Exception as e:

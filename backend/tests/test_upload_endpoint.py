@@ -16,7 +16,7 @@ EPUB = "application/epub+zip"
 @pytest.fixture(autouse=True)
 def environment(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
-    monkeypatch.setattr(documents, "model_ready", lambda: True)
+    monkeypatch.setattr(documents, "analysis_ready", lambda: True)
     queued = []
     monkeypatch.setattr(documents, "enqueue", queued.append)
     monkeypatch.setattr(reader_jobs.jobs, "enqueue", queued.append)
@@ -215,10 +215,10 @@ class TestRejections:
         assert doc.status == "failed" and doc.failure_reason == reader_jobs.GENERIC and doc.paragraphs == []
         assert billing.used_this_month(db, user) == 0
 
-    def test_a_missing_model_blocks_the_upload(self, client, db, auth, user, queued, monkeypatch):
-        monkeypatch.setattr(documents, "model_ready", lambda: False)
+    def test_a_missing_llm_blocks_the_upload(self, client, db, auth, user, queued, monkeypatch):
+        monkeypatch.setattr(documents, "analysis_ready", lambda: False)
         res = upload(client, auth, user, story_pdf())
-        assert res.status_code == 503 and "Model analisis belum terpasang" in res.json()["detail"]
+        assert res.status_code == 503 and "Layanan AI belum dikonfigurasi" in res.json()["detail"]
         db.expire_all()
         assert db.query(models.Document).count() == 0 and queued == []
 

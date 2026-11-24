@@ -10,10 +10,10 @@ def recompute(doc) -> None:
     results = []
     for p in doc.paragraphs:
         p.sexual = max(p.sexual or 0.0, sexual_lexicon_score(p.text))
-        results.append({"profanity": p.profanity or 0.0, "sexual": p.sexual, "violence": p.violence or 0.0, "emotion": p.emotion or "happy", "emotion_prob": p.emotion_score})
+        results.append({"profanity": p.profanity or 0.0, "sexual": p.sexual, "violence": p.violence or 0.0})
     s = summarize(results, ai=doc.heaviness_ai)
     doc.pct_profanity, doc.pct_sexual, doc.pct_violence = s["pct"]["profanity"], s["pct"]["sexual"], s["pct"]["violence"]
-    doc.rating, doc.dominant_emotion = s["rating"], s["emotion"]
+    doc.rating, doc.dominant_emotion = s["rating"], None
     doc.pct_adult, doc.heaviness = s["adult"], s["heaviness"]
 
 
